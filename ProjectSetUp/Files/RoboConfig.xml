@@ -1,0 +1,96 @@
+<?xml version="1.0" standalone="yes"?>
+<Root>
+  <Configuration>
+    <Key>ProcessName</Key>
+    <Value>MainframeAutomationSample</Value>
+  </Configuration>
+  <Configuration>
+    <Key>RoboName</Key>
+    <Value>MainframeAutomationSample</Value>
+  </Configuration>
+  <Configuration>
+    <Key>AppName</Key>
+    <Value>MainframeSample</Value>
+  </Configuration>
+  <Configuration>
+    <Key>AuditLogLevel</Key>
+    <Value>3</Value>
+  </Configuration>
+  <Configuration>
+    <Key>MouseEventSleepTime</Key>
+    <Value>1000</Value>
+  </Configuration>
+  <Configuration>
+    <Key>MouseEventClickLoopLimit</Key>
+    <Value>10</Value>
+  </Configuration>
+  <Configuration>
+    <Key>automationElementWaitTime</Key>
+    <Value>30000</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomPcswsExePath</Key>
+    <Value>C:\Program Files (x86)\IBM\Personal Communications\pcsws.exe</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomSessionWSpath</Key>
+    <Value>D:\Ravina\MainFrameSession.ws</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomConnectionTrials</Key>
+    <Value>50</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomMaxSessionName</Key>
+    <Value>X</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomCommunicationStartWaitTime</Key>
+    <Value>2000</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomSessionFilePath</Key>
+    <Value>D:\Ravina\Session File</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomWaitInputReadyTime</Key>
+    <Value>500</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomMaxWaitInputReadyTime</Key>
+    <Value>5000</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomBlankScreenWaitTime</Key>
+    <Value>1000</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomWindowTitlePrefix</Key>
+    <Value>Session </Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomWindowTitleSuffix</Key>
+    <Value> - [24 x 80]</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomWindowTitleAutomationId</Key>
+    <Value>title bar</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomWindowCloseBtnAutomationId</Key>
+    <Value>Close</Value>
+  </Configuration>
+  <Configuration>
+    <Key>pcomStringMaxWaitTime</Key>
+    <Value>30000</Value>
+  </Configuration>
+  <Configuration>
+    <Key>AppLoadWaitTime</Key>
+    <Value>4000</Value>
+  </Configuration>
+  <Configuration>
+    <Key>PageWaitTime</Key>
+    <Value>15000</Value>
+  </Configuration>
+
+</Root>

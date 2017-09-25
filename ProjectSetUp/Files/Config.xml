@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appSettings>
+  <use_winsvc>false</use_winsvc>
+  <portno>8082</portno>
+  <use_logger>false</use_logger>
+  <logfilepath>C:\Control Tower Client\Log\ClientBridge_Log.txt</logfilepath>
+  <errorlogfilepath>C:\Control Tower Client\Log\ClientBridge_ErrorLog.txt</errorlogfilepath>
+  <use_securitymode>Message</use_securitymode>
+  <!--security mode : Transport/Message-->
+  <use_securedchannel>true</use_securedchannel>
+  <!--True indicates use wshttpbind otherwise use basic http binding-->
+  <use_timelogger>false</use_timelogger>
+  <ccfilepath>C:\Control Tower Client\ClientCommunicatorSelfhosted.exe</ccfilepath>
+  <RecallCnt>5</RecallCnt>
+  <!--Maximum recall count value-->
+  <RecallSec>30</RecallSec>
+  <!--value is in seconds-->
+  <TimeOut>3</TimeOut>
+  <!--value is in minutes-->
+</appSettings>
