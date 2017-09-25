@@ -11,6 +11,7 @@ using System.Windows.Automation;
 
 namespace MainframeAutomationSample
 {
+    // soy lucho y me llega al chompiras todo
     static class CeseAutomation
     {
         [STAThread]
