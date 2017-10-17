@@ -11,7 +11,6 @@ using System.Windows.Automation;
 
 namespace MainframeAutomationSample
 {
-    // soy lucho y me llega al chompiras todo
     static class CeseAutomation
     {
         [STAThread]
@@ -84,10 +83,7 @@ namespace MainframeAutomationSample
             EntityGlobal.appLoadWaitTime = Convert.ToInt32(CommonHelper.GetConfigValueByKey(EntityGlobal.APP_LOAD_WAIT_TIME));
             EntityGlobal.pageLoadWaitTime = Convert.ToInt32(CommonHelper.GetConfigValueByKey(EntityGlobal.PAGE_LOAD_WAIT_TIME));
             EntityGlobal.appName = CommonHelper.GetConfigValueByKey(EntityGlobal.APP_NAME);
-            
-            
         }
-
 
     }
 
