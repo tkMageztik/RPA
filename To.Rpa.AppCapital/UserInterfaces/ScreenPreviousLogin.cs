@@ -1,4 +1,5 @@
-﻿using System;
+﻿using EHLLAPI;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -36,8 +37,8 @@ namespace Tcs.Rpa.AppCapital.Mainframe.Interfaces
             //WinFormAdapter.SetText(_0_Descendants_1[1], "BFPJUARUI");
 
             ValuePattern etb = _0_Descendants_1[1].GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
-            etb.SetValue("BFPJUARUI");           
-            
+            etb.SetValue("BFPJUARUI");
+
             AutomationElementCollection _0_Descendants_2 = _0.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Contraseña:"));
             //WinFormAdapter.SetText(_0_Descendants_2[1], "BFPJUARUI2");
 
@@ -49,6 +50,8 @@ namespace Tcs.Rpa.AppCapital.Mainframe.Interfaces
 
             var invokePattern = _0_Descendants_3[0].GetCurrentPattern(InvokePattern.Pattern) as InvokePattern;
             invokePattern.Invoke();
+
+            /************************** INTENTOS ******************/
 
             //intento 1
             //var tt = _0_Descendants_3[0].GetCurrentPattern(TransformPattern.Pattern) as TransformPattern;
@@ -62,9 +65,42 @@ namespace Tcs.Rpa.AppCapital.Mainframe.Interfaces
 
 
             //AutomationProperty[] t = xx[0].GetSupportedProperties();
-            
+
+            /************************** INTENTOS ******************/
+
+
+
             //TODO: Depende de que la sesión "A" esté libre
 
+            var iConnection = EhllapiWrapper.Connect("A").ToString();
+
+
+            Debug.WriteLine("Valor de conexión: " + iConnection);
+
+            string lectura = null;
+
+            if (iConnection == "0")
+            {
+                EhllapiWrapper.SetCursorPos(453);
+                EhllapiWrapper.SendStr("BFPJUARUI");
+
+                EhllapiWrapper.SetCursorPos(533);
+                EhllapiWrapper.SendStr("BFPJUARUI3");
+
+                EhllapiWrapper.SendStr(@"@E");
+
+                EhllapiWrapper.SetCursorPos(162);
+
+                EhllapiWrapper.ReadScreen(162, 239, out lectura);
+
+
+                if (lectura.IndexOf("La cola de mensajes BFPJUARUI está asignada a otro trabajo") != 0)
+                {
+                    EhllapiWrapper.SendStr(@"@E");
+                }
+
+
+            }
 
         }
 
