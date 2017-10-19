@@ -39,7 +39,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="IMS">
-      <HintPath>..\Mainframe Automation Solution\Library\IMS.dll</HintPath>
+      <HintPath>..\Library\IMS.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -76,7 +76,6 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
-    <None Include="packages.config" />
     <None Include="Properties\Settings.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>Settings.Designer.cs</LastGenOutput>
@@ -101,13 +100,6 @@
     <Folder Include="DA\" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <Import Project="..\Mainframe Automation Solution\packages\UiPath.9.0.6491.23566\build\UiPath.targets" Condition="Exists('..\Mainframe Automation Solution\packages\UiPath.9.0.6491.23566\build\UiPath.targets')" />
-  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
-    <PropertyGroup>
-      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
-    </PropertyGroup>
-    <Error Condition="!Exists('..\Mainframe Automation Solution\packages\UiPath.9.0.6491.23566\build\UiPath.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\Mainframe Automation Solution\packages\UiPath.9.0.6491.23566\build\UiPath.targets'))" />
-  </Target>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">
