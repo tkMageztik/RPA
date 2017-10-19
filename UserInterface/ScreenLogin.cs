@@ -35,6 +35,9 @@ namespace MainframeAutomationSample.UserInterface
 
         public void DoOperations()
         {
+
+
+
             MainFrameAdapter.WaitForCursor(6, 53);
             //GlobalHelper.GetUserPwd(EntityGlobal.appName);
             SystemLog.LogAuditMessage(EntityUserId.constScrName, DiagnosticLevel.level2, MethodBase.GetCurrentMethod().Name + EntityGlobal.METHOD_START, EntityGlobal.transactionId);

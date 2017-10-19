@@ -28,9 +28,9 @@ namespace MainframeAutomationSample
 
                 /*V1*/
                 
-                /*isOpened = MainFrameAdapter.OpenPcomSessionAndConnect();
+                //isOpened = MainFrameAdapter.OpenPcomSessionAndConnect();
                 
-                Process[] p = Process.GetProcessesByName("pcsws");*/
+                //Process[] p = Process.GetProcessesByName("pcsws");
 
                 /*
                 System.Windows.Automation.AutomationElement t = WinFormAdapter.GetAEFromHandle(p[0].MainWindowHandle);
@@ -49,8 +49,8 @@ namespace MainframeAutomationSample
                 WinFormAdapter.SetText(t3, "BFPJUARUI2");
                 */
                 
-                /*
-                if (isOpened)
+                
+                /*if (isOpened)
                 {
                    new BusinessLogic.BLIspfValidator().DoActivities();
                 }*/

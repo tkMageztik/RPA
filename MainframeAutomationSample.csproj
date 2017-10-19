@@ -82,7 +82,6 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Entities\EntityPwd.cs" />
     <Compile Include="Entities\EntityUserId.cs" />
-    <Compile Include="UserInterface\Class1.cs" />
     <Compile Include="UserInterface\ScreenBajaCtaUsuario.cs" />
     <Compile Include="UserInterface\ScreenCtaUsuarioEliminar.cs" />
     <Compile Include="UserInterface\ScreenIspf.cs" />

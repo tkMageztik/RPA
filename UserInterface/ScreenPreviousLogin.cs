@@ -57,8 +57,6 @@ namespace MainframeAutomationSample.UserInterface
         public void ExtractElements()
         {
             throw new NotImplementedException();
-
-
         }
     }
 }
