@@ -7,11 +7,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MainframeAutomationSample",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProjectSetUp", "ProjectSetUp\ProjectSetUp.csproj", "{63427E58-721B-4C1A-B42F-89B862061D22}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "To.Rpa.AppCapital", "..\To.Rpa.AppCapital.Mainframe\To.Rpa.AppCapital.csproj", "{D7F8158A-82EB-41B6-A389-8B8B479FA412}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "To.Rpa.AppCapital", "To.Rpa.AppCapital.Mainframe\To.Rpa.AppCapital.csproj", "{D7F8158A-82EB-41B6-A389-8B8B479FA412}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "To.Rpa.Util", "..\To.Rpa.Util\To.Rpa.Util.csproj", "{2A212151-8859-4F18-BF83-F974CED030AE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "To.Rpa.Util", "To.Rpa.Util\To.Rpa.Util.csproj", "{2A212151-8859-4F18-BF83-F974CED030AE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "To.Rpa.EHLLAPI", "..\To.Rpa.EHLLAPI\To.Rpa.EHLLAPI.csproj", "{CB8124C7-C7F9-469C-B417-B1243439FEDD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "To.Rpa.EHLLAPI", "To.Rpa.EHLLAPI\To.Rpa.EHLLAPI.csproj", "{CB8124C7-C7F9-469C-B417-B1243439FEDD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
