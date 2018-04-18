@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Tcs.Rpa.AppCapital.Mainframe.Properties
+namespace To.Rpa.AppCapital.Mainframe.Properties
 {
 
 

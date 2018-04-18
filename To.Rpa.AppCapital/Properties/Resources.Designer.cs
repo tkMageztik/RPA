@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Tcs.Rpa.AppCapital.Mainframe.Properties
+namespace To.Rpa.AppCapital.Mainframe.Properties
 {
 
 
@@ -44,7 +44,7 @@ namespace Tcs.Rpa.AppCapital.Mainframe.Properties
             {
                 if ((resourceMan == null))
                 {
-                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("Tcs.Rpa.AppCapital.Mainframe.Properties.Resources", typeof(Resources).Assembly);
+                    global::System.Resources.ResourceManager temp = new global::System.Resources.ResourceManager("To.Rpa.AppCapital.Mainframe.Properties.Resources", typeof(Resources).Assembly);
                     resourceMan = temp;
                 }
                 return resourceMan;

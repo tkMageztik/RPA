@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Tcs.Rpa.AppCapital.Mainframe.Interfaces
+namespace To.Rpa.AppCapital.Interfaces
 {
     public interface IUserInterface
     {

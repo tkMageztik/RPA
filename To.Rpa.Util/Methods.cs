@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
-namespace Tcs.Rpa.Util
+namespace To.Rpa.Util
 {
     public class Methods
     {
@@ -36,6 +38,19 @@ namespace Tcs.Rpa.Util
                 }
             }
             catch { }
+        }
+        //TODO: en parametro estaba this, es método de extensión, investigar
+        public static Bitmap cropAtRect(Bitmap b, Rectangle r)
+        {
+            Bitmap nb = new Bitmap(r.Width, r.Height);
+            Graphics g = Graphics.FromImage(nb);
+            g.DrawImage(b, -r.X, -r.Y);
+            return nb;
+        }
+
+        public static void Sleep()
+        {
+            Thread.Sleep(Convert.ToInt32(ConfigurationManager.AppSettings["Sleep"]));
         }
     }
 }

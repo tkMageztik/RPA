@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("Tcs.Rpa.AppCapital.Mainframe")]
+[assembly: AssemblyTitle("To.Rpa.AppCapital")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("BANCO FINANCIERO DEL PERU")]
-[assembly: AssemblyProduct("Tcs.Rpa.AppCapital.Mainframe")]
+[assembly: AssemblyProduct("To.Rpa.AppCapital")]
 [assembly: AssemblyCopyright("Copyright © BANCO FINANCIERO DEL PERU 2017")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

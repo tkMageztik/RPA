@@ -1,12 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using Tcs.Rpa.AppCapital.Mainframe.Interfaces;
-using Tcs.Rpa.AppCapital.Mainframe.UserInterfaces;
+using To.Rpa.AppCapital.Interfaces;
+using To.Rpa.AppCapital.UserInterfaces;
+using To.Rpa.Util;
 
-namespace Tcs.Rpa.AppCapital.Mainframe.BL
+namespace To.Rpa.AppCapital.BL
 {
     public class BLMain
     {
@@ -19,10 +22,18 @@ namespace Tcs.Rpa.AppCapital.Mainframe.BL
         {
             try
             {
-                new ScreenPreviousLogin().DoActivities();
-                //new ScreenLogin().DoActivities();
+
+                if (Convert.ToBoolean(ConfigurationManager.AppSettings["DualValidation"].ToString().Trim()))
+                {
+                    new ScreenPreviousLogin().DoActivities();
+                }
+
+                new ScreenLogin().DoActivities();
             }
-            catch (Exception exc) { }
+            catch (Exception exc)
+            {
+                throw exc;
+            }
         }
     }
 }
