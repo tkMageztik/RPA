@@ -18,6 +18,7 @@ using S = DocumentFormat.OpenXml.Spreadsheet.Sheets;
 using E = DocumentFormat.OpenXml.OpenXmlElement;
 using A = DocumentFormat.OpenXml.OpenXmlAttribute;
 using DocumentFormat.OpenXml;
+using Ghostscript.NET.Rasterizer;
 
 namespace To.Rpa.AppCTS.BL
 {
@@ -28,12 +29,22 @@ namespace To.Rpa.AppCTS.BL
         private string OriginDirectory { get; set; }
         private string ScrapsDirectory { get; set; }
         private string TemplatesDirectory { get; set; }
+        private string PdfsErrorDirectory { get; set; }
         private List<BECTSFormat> ApprovedFormats { get; set; }
         private List<BECTSFormat> DisapprovedFormats { get; set; }
-        private List<BECTSImagePages> col2ImagesPagesTemp { get; set; }
+        private List<BECTSImagePage> col2ImagesPagesTemp { get; set; }
         //private string col2FileNameTemp { get; set; }
         private bool foundHeader { get; set; }
         private string tesseractLanguage { get; set; }
+
+
+        private UInt16 XScaling { get; set; }
+        private UInt16 YScaling { get; set; }
+        private UInt16 ScalingInitialPoint { get; set; }
+        private UInt16 VerticalWidth { get; set; }
+        private UInt16 VerticalHeight { get; set; }
+        private string JarDirectory { get; set; }
+        private string DllDirectory { get; set; }
 
         public BLMain()
         {
@@ -42,27 +53,230 @@ namespace To.Rpa.AppCTS.BL
             ScrapsDirectory = ConfigurationManager.AppSettings["ScrapsDirectory"];
             TemplatesDirectory = ConfigurationManager.AppSettings["TemplatesDirectory"];
             tesseractLanguage = ConfigurationManager.AppSettings["TesseractLanguage"];
+            PdfsErrorDirectory = ConfigurationManager.AppSettings["PdfsErrorDirectory"];
+            XScaling = Convert.ToUInt16(ConfigurationManager.AppSettings["XScaling"]);
+            YScaling = Convert.ToUInt16(ConfigurationManager.AppSettings["YScaling"]);
+            ScalingInitialPoint = Convert.ToUInt16(ConfigurationManager.AppSettings["ScalingInitialPoint"]);
+            VerticalWidth = Convert.ToUInt16(ConfigurationManager.AppSettings["VerticalWidth"]);
+            VerticalHeight = Convert.ToUInt16(ConfigurationManager.AppSettings["VerticalHeight"]);
+            JarDirectory = ConfigurationManager.AppSettings["JarDirectory"];
+            DllDirectory = ConfigurationManager.AppSettings["DllDirectory"];
 
             //TODO, no debería ser lazy load... .
             ApprovedFormats = new List<BECTSFormat>();
             DisapprovedFormats = new List<BECTSFormat>();
-            col2ImagesPagesTemp = new List<BECTSImagePages>();
+            col2ImagesPagesTemp = new List<BECTSImagePage>();
         }
 
         public void DoActivities()
         {
-            //GetPdfFromSharedDirectory();
+            //GetPdfFromSharedDirectory();/*1*/
             //GetPdfFromMailBox(); MUEVE A \WORKSPACE\ORIGENES
-            //CreateFoldersPerCTSFormat();
+            CreateFoldersPerCTSFormat();/*1*/
             //ExtractImagesFromPdf();
-            //ImproveImagesFromPdf();
-            GetApprovedFormats();
+            //ImproveImagesFromPdf(); /*1*/
+            GetApprovedFormats();/*1*/
 
-            GetScrapsDataImages();
+            //GetScrapsHeaderDataImages();
+            GetScrapsDataImages(); /*1 - en teoría si llego hasta acá, todo estará bien aunque no necesarimente copiado al 100%*/
             //GetScrapsDataImagesFull();
             //GetHeaderDataFromScraps();
-            GetDataFromScraps();
-            //MoveOriginsNoProcess(); lvl 01
+            GetDataFromScraps();/*1*/
+            //GetDataFullFromRaw();/*1*/
+            //MovePdfNoProcess();/*1*/ //lvl 01
+            //MoveScrapsErrorProcess();/*1*/
+            //MoveScrapsCorrectProcess();/*1*/
+
+            Console.WriteLine("Termino OK");
+            Methods.LogProceso("Termino OK");
+        }
+
+        private void ExtractImagesFromPdf(String pathImage, String pathPdf)
+        {
+            /*try
+            {
+                System.Diagnostics.Process clientProcess = new Process();
+                clientProcess.StartInfo.FileName = "java";
+                clientProcess.StartInfo.Arguments = @"-jar " + " " + JarDirectory + " " + "\"" + pathPdf + "\"" + " " + pathImage + " " + DllDirectory;
+                clientProcess.Start();
+            }
+            catch (Exception e)
+            {
+                e.GetBaseException();
+            }*/
+
+            //Get all the PDF files in the specified location
+            //var pdfFiles = Directory.GetFiles(@"D:\PDFSplit\Example\outputFolder\", "*.pdf");
+
+            //process each PDF file
+            //foreach (var pdfFile in pdfFiles)
+            //{
+            //var fileName = Path.GetFileNameWithoutExtension(pathPdf);
+            PdfToPng(pathImage, pathPdf);
+            //}
+
+        }
+
+        private static void PdfToPng(string inputFile, string outputFileName)
+        {
+            var xDpi = 800; //set the x DPI
+            var yDpi = 800; //set the y DPI
+            var pageNumber = 1; // the pages in a PDF document
+
+
+            try
+            {
+                using (var rasterizer = new GhostscriptRasterizer()) //create an instance for GhostscriptRasterizer
+                {
+                    rasterizer.Open(outputFileName); //opens the PDF file for rasterizing
+
+                    int pages = rasterizer.PageCount;
+                    string outputPNGPath = "";
+                    for (int i = 0; i < pages; i++)
+                    {
+                        outputPNGPath = Path.Combine(inputFile,"original", "base_" + inputFile.Substring(inputFile.Length - 4, 4) + "_" + i + ".png");
+
+                        var pdf2PNG = rasterizer.GetPage(xDpi, yDpi, i + 1);
+                        pdf2PNG.Save(outputPNGPath, System.Drawing.Imaging.ImageFormat.Png);
+                        Console.WriteLine("Saved " + outputPNGPath);
+                    }
+
+                }
+            }
+            catch (Exception exc)
+            {
+                Console.WriteLine(exc.Message);
+            }
+        }
+
+        private void GetDataFullFromRaw()
+        {
+            List<string> data;
+            foreach (BECTSFormat format in DisapprovedFormats)
+            {
+                foreach (BECTSImagePage imagePage in format.LstBECTSImagePages)
+                {
+                    data = GetData(ScrapsDirectory + format.FormatCode + @"\original\" + imagePage.CodePage);
+
+                    if (data != null)
+                    {
+                        using (TextWriter tw = new StreamWriter(ScrapsDirectory + @"\" + format.FormatCode + @"\plantilla\" + Path.GetFileNameWithoutExtension(imagePage.CodePage) + ".txt"))
+                        {
+                            foreach (string s in data)
+                                tw.WriteLine(s);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void ImproveImagesFromPdf()
+        {
+            ReescalingImage();
+        }
+
+        private void ReescalingImage() //positive.
+        {
+            DirectoryInfo di = new DirectoryInfo(ScrapsDirectory);
+            string directoryFullName = "";
+            string directoryName = "";
+
+            DirectoryInfo[] directories = di.GetDirectories();
+            //FileInfo[] files = di.GetFiles();
+
+            int totalDirectories = directories.Length;
+
+            for (int i = 0; i < totalDirectories; i++)
+            {
+                //TODO: pensemos que vamos a reescalar solo las imagenes de data que vendrán solas sin nada más.
+                directoryFullName = directories[i].FullName;
+                directoryName = directories[i].Name;
+
+                di = new DirectoryInfo(directoryFullName + @"\ORIGINAL\");
+
+                FileInfo[] files = di.GetFiles("base_" + directoryName + "*");
+
+                int totalArchivos = files.Length;
+
+                for (int o = 0; o < totalArchivos; o++)
+                {
+                    Bitmap image = new Bitmap(files[o].FullName);
+                    string eje = image.Width > image.Height ? "horizontal" : "vertical";
+
+                    Bitmap newImage = null;
+                    int yScaling = this.YScaling;
+                    List<string> data = new List<string>();
+                    int result = 0;
+
+                    if (eje == "vertical")
+                    {
+                        do
+                        {
+                            newImage = Methods.cropAtRect(image, new Rectangle((image.Width / 2) - (this.XScaling / 2), (image.Height / 2) - (yScaling / 2), this.XScaling, 100));
+                            newImage.Save(di.FullName + @"\Scaling.png");
+
+                            data = GetData(di.FullName + @"\Scaling.png");
+
+                            yScaling += 100;
+                        } while (data.Count > 0);
+
+                        result = (image.Height / 2) - (yScaling / 2) + this.YScaling;
+                        result = result - this.ScalingInitialPoint;
+
+                        newImage = Methods.cropAtRect(image, new Rectangle(result, result, image.Width - result, image.Height - result));
+                        newImage.Save(di.FullName + @"\Scaling_final.png");
+
+                        image.Dispose();
+                        Size newSize = new Size(this.VerticalWidth, this.VerticalHeight);
+                        image = new Bitmap(newImage, newSize);
+                        image.Save(files[o].FullName);
+                    }
+                }
+
+            }
+        }
+
+        private void MovePdfNoProcess()
+        {
+            DirectoryInfo diOrigin = new DirectoryInfo(OriginDirectory);
+            DirectoryInfo diDestiny = new DirectoryInfo(PdfsErrorDirectory);
+
+            //FileInfo[] files = OriginFiles;
+            FileInfo[] files = diOrigin.GetFiles();
+
+            int totalFiles = files.Length;
+
+            for (int i = 0; i < totalFiles; i++)
+            {
+                File.Move(OriginDirectory + files[i].Name,
+                    PdfsErrorDirectory + files[i].Name);
+            }
+        }
+
+        private void MoveToUserFinal()
+        {
+            foreach (BECTSFormat format in DisapprovedFormats)
+            {
+
+            }
+        }
+
+        private void MoveScrapsErrorProcess()
+        {
+            foreach (BECTSFormat format in DisapprovedFormats)
+            {
+
+            }
+        }
+
+        private void MoveScrapsCorrectProcess()
+        {
+            foreach (BECTSFormat format in ApprovedFormats) { }
+        }
+
+        private void MoveBackupAll()
+        {
+
         }
         //TODO: por que los thumbnails de windows muestran imagenes que no corresponden a la realidad??
         private int getFormatCode(string fileName)
@@ -118,16 +332,12 @@ namespace To.Rpa.AppCTS.BL
                     diScrapsChild.Create();
                     diScrapsChild.Refresh();
 
+                    ExtractImagesFromPdf(ScrapsDirectory + formatCode, OriginDirectory + files[i].Name);
+
                     File.Move(OriginDirectory + files[i].Name,
                         ScrapsDirectory + formatCode + @"\ORIGINAL\" + files[i].Name);
                 }
             }
-        }
-
-
-        private void ImproveImagesFromPdf()
-        {
-            throw new NotImplementedException();
         }
 
         private void ExtractImagesFromPdf()
@@ -158,18 +368,24 @@ namespace To.Rpa.AppCTS.BL
                     DirectoryInfo diDestiny = new DirectoryInfo(OriginDirectory);
 
                     FileInfo[] destinyFiles = diDestiny.GetFiles("*-*" + formatCode + "*");
-
-                    int length = destinyFiles.Length;
-
-                    if (length > 0)
+                    try
                     {
-                        File.Move(diOrigin.FullName + OriginFiles[i].Name,
-                            diDestiny.FullName + Path.GetFileNameWithoutExtension(OriginFiles[i].Name) + "_" + length + Path.GetExtension(OriginFiles[i].Name));
+                        int length = destinyFiles.Length;
+
+                        if (length > 0)
+                        {
+                            File.Move(diOrigin.FullName + OriginFiles[i].Name,
+                                diDestiny.FullName + Path.GetFileNameWithoutExtension(OriginFiles[i].Name) + "_" + length + Path.GetExtension(OriginFiles[i].Name));
+                        }
+                        else
+                        {
+                            File.Move(diOrigin.FullName + OriginFiles[i].Name,
+                                diDestiny.FullName + OriginFiles[i].Name);
+                        }
                     }
-                    else
+                    catch (Exception exc)
                     {
-                        File.Move(diOrigin.FullName + OriginFiles[i].Name,
-                            diDestiny.FullName + OriginFiles[i].Name);
+                        Console.WriteLine("algún archivo ya existe en la carpeta origenes con respecto al buzón");
                     }
                 }
             }
@@ -192,7 +408,7 @@ namespace To.Rpa.AppCTS.BL
 
             for (int i = 0; i < totalDirectories; i++)
             {
-                List<BECTSImagePages> lstBECTSImagePages = new List<BECTSImagePages>();
+                List<BECTSImagePage> lstBECTSImagePages = new List<BECTSImagePage>();
                 foundHeader = false;
 
                 directoryFullName = directories[i].FullName;
@@ -216,13 +432,13 @@ namespace To.Rpa.AppCTS.BL
                         try
                         {
                             //int attemps = 0;
-                            File.Copy(files[o].FullName, files[o].FullName.Replace(@"\ORIGINAL", ""));
+                            File.Copy(files[o].FullName, files[o].FullName.Replace(@"\ORIGINAL", ""), true);
                             attemps = Int32.Parse(ConfigurationManager.AppSettings["Attempts"]);
                         }
                         catch (Exception exc) { attemps++; }
                     }
 
-                    for (int u = 0; u < 3; u++)
+                    for (int u = 0; u < 4; u++)
                     {
                         using (Bitmap image = new Bitmap(files[o].FullName.Replace(@"\ORIGINAL", "")))
                         {
@@ -239,11 +455,13 @@ namespace To.Rpa.AppCTS.BL
                             //COLUMNA 4 - NRO DOCUMENTO
                             if (!foundHeader)
                             {
-                                newImage = Methods.cropAtRect(image, new Rectangle(1570, 1494, 350, image.Height - 1494));
+                                //TODO: JRDC, el tajo desde más arriba así sea header... .
+                                newImage = Methods.cropAtRect(image, new Rectangle(3140, 2988, 700, image.Height - 2988));
+                                //newImage = Methods.cropAtRect(image, new Rectangle(1570, 1494, 350, image.Height - 1494));
                             }
                             else
                             {
-                                newImage = Methods.cropAtRect(image, new Rectangle(1570, 10, 350, image.Height - 10));
+                                newImage = Methods.cropAtRect(image, new Rectangle(3140, 20, 700, image.Height - 20));
                             }
                             //fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_3" + Path.GetExtension(imagePages.CodePage);
                             fileName = files[o].DirectoryName.Replace(@"\ORIGINAL", "") + @"\" + Path.GetFileNameWithoutExtension(files[o].Name) + "_4" + Path.GetExtension(files[0].Name);
@@ -265,14 +483,30 @@ namespace To.Rpa.AppCTS.BL
 
                                 if (!foundHeader)
                                 {
-                                    lstBECTSImagePages.Add(new BECTSImagePages { CodePage = files[o].Name, isHeader = true });
-                                    col2ImagesPagesTemp.Add(new BECTSImagePages { CodePage = files[o].Name, isHeader = true, ImagePagesScraps = new List<string>() { fileName } });
+                                    lstBECTSImagePages.Add(new BECTSImagePage { CodePage = files[o].Name, isHeader = true });
+                                    col2ImagesPagesTemp.Add(new BECTSImagePage
+                                    {
+                                        CodePage = files[o].Name,
+                                        isHeader = true,
+                                        ImagePagesScraps = new List<BECTSScrap>()
+                                        {
+                                            new BECTSScrap { ScrapPath = fileName }
+                                        }
+                                    });
+
                                     foundHeader = true;
                                 }
                                 else
                                 {
-                                    lstBECTSImagePages.Add(new BECTSImagePages { CodePage = files[o].Name });
-                                    col2ImagesPagesTemp.Add(new BECTSImagePages { CodePage = files[o].Name, ImagePagesScraps = new List<string>() { fileName } });
+                                    lstBECTSImagePages.Add(new BECTSImagePage { CodePage = files[o].Name });
+                                    col2ImagesPagesTemp.Add(new BECTSImagePage
+                                    {
+                                        CodePage = files[o].Name,
+                                        ImagePagesScraps = new List<BECTSScrap>()
+                                        {
+                                            new BECTSScrap { ScrapPath = fileName }
+                                        }
+                                    });
                                 }
                                 break;
                             }
@@ -281,8 +515,47 @@ namespace To.Rpa.AppCTS.BL
                                 ImageRotate(image, files[o].FullName.Replace(@"\ORIGINAL", ""));
                             }
 
+                            //Me aseguro que termine la imagen en horizontal.
+                            if (u == 3)
+                            {
+                                if (image.Width < image.Height)
+                                {
+                                    ImageRotate(image, files[o].FullName.Replace(@"\ORIGINAL", ""));
+                                }
+
+                            }
                         }
+
                     }
+                    //falta donde guadan los diisprovaide
+                    /*if (!foundHeader)
+                                {
+                                    lstBECTSImagePages.Add(new BECTSImagePage { CodePage = files[o].Name, isHeader = true });
+                                    col2ImagesPagesTemp.Add(new BECTSImagePage
+                                    {
+                                        CodePage = files[o].Name,
+                                        isHeader = true,
+                                        ImagePagesScraps = new List<BECTSScrap>()
+                                        {
+                                            new BECTSScrap { ScrapPath = fileName }
+                                        }
+                                    });
+
+                                    foundHeader = true;
+                                }
+                                else
+                                {
+                                    lstBECTSImagePages.Add(new BECTSImagePage { CodePage = files[o].Name });
+                                    col2ImagesPagesTemp.Add(new BECTSImagePage
+                                    {
+                                        CodePage = files[o].Name,
+                                        ImagePagesScraps = new List<BECTSScrap>()
+                                        {
+                                            new BECTSScrap { ScrapPath = fileName }
+                                        }
+                                    });
+                                }
+                                break;*/
 
                 }
 
@@ -293,6 +566,8 @@ namespace To.Rpa.AppCTS.BL
                         FormatCode = int.Parse(directoryName),
                         LstBECTSImagePages = lstBECTSImagePages
                     });
+
+                    approved = false;
                 }
                 else
                 {
@@ -310,137 +585,254 @@ namespace To.Rpa.AppCTS.BL
         {
             foreach (BECTSFormat formats in ApprovedFormats)
             {
-                foreach (BECTSImagePages imagePages in formats.LstBECTSImagePages)
+                foreach (BECTSImagePage imagePages in formats.LstBECTSImagePages)
                 {
                     string fileName = ScrapsDirectory + formats.FormatCode + @"\" + imagePages.CodePage;
                     using (Bitmap image = new Bitmap(fileName))
                     {
+                        //Solo se procesan las imágenes en horizontal
+                        if (image.Width > image.Height)
+                        {
+                            Bitmap newImage = null;
+                            if (imagePages.isHeader)
+                            {
+                                //TODO: debería dejar todos en horizontal.
+                                //RUC
+                                newImage = Methods.cropAtRect(image, new Rectangle(2200, 200, 1500, 700));
+                                fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_RUC" + Path.GetExtension(imagePages.CodePage);
+                                newImage.Save(fileName);
+                                imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = true, ScrapPath = fileName });
 
-                        Bitmap newImage = null;
-                        //COLUMNA 2 - NOMBRES Y APELLIDOS
-                        if (imagePages.isHeader)
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(450, 1494, 850, image.Height - 1494));
-                        }
-                        else
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(450, 10, 850, image.Height - 10));
-                        }
-                        fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_2" + Path.GetExtension(imagePages.CodePage);
-                        newImage.Save(fileName);
-                        imagePages.ImagePagesScraps.Add(fileName);
+                                //CODIGO_LISTADO
+                                newImage = Methods.cropAtRect(image, new Rectangle(7480, 200, image.Width - 7480, 700));
+                                fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_FormatCode" + Path.GetExtension(imagePages.CodePage);
+                                newImage.Save(fileName);
+                                imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = true, ScrapPath = fileName });
 
-                        //COLUMNA 3 - TIPO DOCUMENTO
-                        if (imagePages.isHeader)
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(1320, 1494, 250, image.Height - 1494));
-                        }
-                        else
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(1320, 10, 250, image.Height - 10));
-                        }
-                        fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_3" + Path.GetExtension(imagePages.CodePage);
-                        newImage.Save(fileName);
-                        imagePages.ImagePagesScraps.Add(fileName);
+                                //TODO:PUEDE OBTENERSE EL PERIODO DE OTRA MANERA.
+                                //PERIODO
+                                newImage = Methods.cropAtRect(image, new Rectangle(2200, 340, 1500, 700));
+                                fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_Period" + Path.GetExtension(imagePages.CodePage);
+                                newImage.Save(fileName);
+                                imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = true, ScrapPath = fileName });
 
-                        //COLUMNA 4 - NRO DOCUMENTO
-                        //imagePages.ImagePagesScraps.Add(col2FileNameTemp);
-                        imagePages.ImagePagesScraps.Add(col2ImagesPagesTemp.Where(x => x.CodePage == imagePages.CodePage).Select(x => x.ImagePagesScraps[0]).First());
+                                //AÑO
+                                newImage = Methods.cropAtRect(image, new Rectangle(4880, 340, 1500, 700));
+                                fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_Year" + Path.GetExtension(imagePages.CodePage);
+                                newImage.Save(fileName);
+                                imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = true, ScrapPath = fileName });
 
-                        //newImage = Methods.cropAtRect(image, new Rectangle(1570, 1494, 350, image.Height - 1494));
-                        //fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_3" + Path.GetExtension(imagePages.CodePage);
-                        //newImage.Save(fileName);
-                        //imagePages.ImagePagesScraps.Add(fileName);
+                                //MONEDA ABONO
+                                newImage = Methods.cropAtRect(image, new Rectangle(7480, 200, image.Width - 7480, 860));
+                                fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_Currency" + Path.GetExtension(imagePages.CodePage);
+                                newImage.Save(fileName);
+                                imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = true, ScrapPath = fileName });
+                            }
 
-                        //COLUMNA 5 - NRO CUENTA
-                        if (imagePages.isHeader)
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(1920, 1494, 400, image.Height - 1494));
-                        }
-                        else
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(1920, 10, 400, image.Height - 10));
-                        }
-                        fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_5" + Path.GetExtension(imagePages.CodePage);
-                        newImage.Save(fileName);
-                        imagePages.ImagePagesScraps.Add(fileName);
+                            //COLUMNA 2 - NOMBRES Y APELLIDOS
+                            if (imagePages.isHeader)
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(900, 2988, 1700, image.Height - 2988));
+                            }
+                            else
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(900, 20, 1700, image.Height - 20));
+                            }
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_2" + Path.GetExtension(imagePages.CodePage);
+                            newImage.Save(fileName);
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName });
 
-                        //COLUMNA 6 - CUENTA > MONEDA
-                        if (imagePages.isHeader)
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(2420, 1494, 220, image.Height - 1494));
-                        }
-                        else
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(2420, 10, 220, image.Height - 10));
-                        }
-                        fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_6" + Path.GetExtension(imagePages.CodePage);
-                        newImage.Save(fileName);
-                        imagePages.ImagePagesScraps.Add(fileName);
+                            //COLUMNA 3 - TIPO DOCUMENTO
+                            if (imagePages.isHeader)
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(2640, 2988, 500, image.Height - 2988));
+                            }
+                            else
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(2640, 20, 500, image.Height - 20));
+                            }
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_3" + Path.GetExtension(imagePages.CodePage);
+                            newImage.Save(fileName);
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName });
 
-                        //COLUMNA 7 - ABONO > MONTO
-                        if (imagePages.isHeader)
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(2660, 1494, 380, image.Height - 1494));
-                        }
-                        else
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(2660, 10, 380, image.Height - 10));
-                        }
-                        fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_7" + Path.GetExtension(imagePages.CodePage);
-                        newImage.Save(fileName);
-                        imagePages.ImagePagesScraps.Add(fileName);
+                            //COLUMNA 4 - NRO DOCUMENTO
+                            //imagePages.ImagePagesScraps.Add(col2FileNameTemp);
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = col2ImagesPagesTemp.Where(x => x.CodePage == imagePages.CodePage).Select(x => x.ImagePagesScraps[0].ScrapPath).First() });
 
-                        //COLUMNA 8 - ABONO > MONEDA
-                        if (imagePages.isHeader)
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(3040, 1494, 220, image.Height - 1494));
-                        }
-                        else
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(3040, 10, 220, image.Height - 10));
-                        }
-                        fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_8" + Path.GetExtension(imagePages.CodePage);
-                        newImage.Save(fileName);
-                        imagePages.ImagePagesScraps.Add(fileName);
+                            //newImage = Methods.cropAtRect(image, new Rectangle(1570, 1494, 350, image.Height - 1494));
+                            //fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_3" + Path.GetExtension(imagePages.CodePage);
+                            //newImage.Save(fileName);
+                            //imagePages.ImagePagesScraps.Add(fileName);
 
-                        //COLUMNA 9 - 4 REMUNERACIONES > MONTO
-                        if (imagePages.isHeader)
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(3360, 1494, 480, image.Height - 1494));
-                        }
-                        else
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(3360, 10, 480, image.Height - 10));
-                        }
-                        fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_9" + Path.GetExtension(imagePages.CodePage);
-                        newImage.Save(fileName);
-                        imagePages.ImagePagesScraps.Add(fileName);
+                            //COLUMNA 5 - NRO CUENTA
+                            if (imagePages.isHeader)
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(3840, 2988, 800, image.Height - 2988));
+                            }
+                            else
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(3840, 20, 800, image.Height - 20));
+                            }
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_5" + Path.GetExtension(imagePages.CodePage);
+                            newImage.Save(fileName);
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName });
 
-                        //COLUMNA 10 - 4 REMUNERACIONES > MONEDA
-                        if (imagePages.isHeader)
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(3840, 1494, 220, image.Height - 1494));
-                        }
-                        else
-                        {
-                            newImage = Methods.cropAtRect(image, new Rectangle(3840, 10, 220, image.Height - 10));
-                        }
-                        fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_10" + Path.GetExtension(imagePages.CodePage);
-                        newImage.Save(fileName);
-                        imagePages.ImagePagesScraps.Add(fileName);
+                            //COLUMNA 6 - CUENTA > MONEDA
+                            if (imagePages.isHeader)
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(4840, 2988, 440, image.Height - 2988));
+                            }
+                            else
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(4840, 20, 440, image.Height - 20));
+                            }
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_6" + Path.GetExtension(imagePages.CodePage);
+                            newImage.Save(fileName);
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName });
 
-                        //imagePages.ImagePagesScraps = imagePages.ImagePagesScraps.OrderBy(x => x).ToList();
+                            //COLUMNA 7 - ABONO > MONTO
+                            if (imagePages.isHeader)
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(5320, 2988, 760, image.Height - 2988));
+                            }
+                            else
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(5320, 20, 760, image.Height - 20));
+                            }
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_7" + Path.GetExtension(imagePages.CodePage);
+                            newImage.Save(fileName);
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName });
+
+                            //COLUMNA 8 - ABONO > MONEDA
+                            if (imagePages.isHeader)
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(6080, 2988, 440, image.Height - 2988));
+                            }
+                            else
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(6080, 20, 440, image.Height - 20));
+                            }
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_8" + Path.GetExtension(imagePages.CodePage);
+                            newImage.Save(fileName);
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName });
+
+                            //COLUMNA 9 - 4 REMUNERACIONES > MONTO
+                            if (imagePages.isHeader)
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(6720, 2988, 960, image.Height - 2988));
+                            }
+                            else
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(6720, 20, 960, image.Height - 20));
+                            }
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_9" + Path.GetExtension(imagePages.CodePage);
+                            newImage.Save(fileName);
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName });
+
+                            //COLUMNA 10 - 4 REMUNERACIONES > MONEDA
+                            if (imagePages.isHeader)
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(7680, 2988, 440, image.Height - 2988));
+                            }
+                            else
+                            {
+                                newImage = Methods.cropAtRect(image, new Rectangle(7680, 20, 440, image.Height - 20));
+                            }
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_10" + Path.GetExtension(imagePages.CodePage);
+                            newImage.Save(fileName);
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName });
+
+                            //imagePages.ImagePagesScraps = imagePages.ImagePagesScraps.OrderBy(x => x).ToList();
+                        }
                     }
                 }
             }
         }
+
+        //private void GetScrapsHeaderDataImages()
+        //{
+        //    foreach (BECTSFormat formats in ApprovedFormats)
+        //    {
+        //        foreach (BECTSImagePage imagePages in formats.LstBECTSImagePages)
+        //        {
+        //            string fileName = ScrapsDirectory + formats.FormatCode + @"\" + imagePages.CodePage;
+        //            using (Bitmap image = new Bitmap(fileName))
+        //            {
+
+        //                Bitmap newImage = null;
+        //                if (imagePages.isHeader)
+        //                {
+        //                    //RUC
+        //                    newImage = Methods.cropAtRect(image, new Rectangle(1100, 100, 750, 350));
+        //                    fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_RUC" + Path.GetExtension(imagePages.CodePage);
+        //                    newImage.Save(fileName);
+        //                    imagePages.ImagePagesScraps.Add(true, fileName);
+
+        //                    //CODIGO_LISTADO
+        //                    newImage = Methods.cropAtRect(image, new Rectangle(3740, 100, image.Width - 3740, 350));
+        //                    fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_FormatCode" + Path.GetExtension(imagePages.CodePage);
+        //                    newImage.Save(fileName);
+        //                    imagePages.ImagePagesScraps.Add(true, fileName);
+
+        //                    //TODO:PUEDE OBTENERSE EL PERIODO DE OTRA MANERA.
+        //                    //PERIODO
+        //                    newImage = Methods.cropAtRect(image, new Rectangle(1100, 170, 750, 350));
+        //                    fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_Period" + Path.GetExtension(imagePages.CodePage);
+        //                    newImage.Save(fileName);
+        //                    imagePages.ImagePagesScraps.Add(true, fileName);
+
+        //                    //AÑO
+        //                    newImage = Methods.cropAtRect(image, new Rectangle(2440, 170, 750, 350));
+        //                    fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_Year" + Path.GetExtension(imagePages.CodePage);
+        //                    newImage.Save(fileName);
+        //                    imagePages.ImagePagesScraps.Add(true, fileName);
+
+        //                    //MONEDA ABONO
+        //                    newImage = Methods.cropAtRect(image, new Rectangle(3740, 100, image.Width - 3740, 430));
+        //                    fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_Currency" + Path.GetExtension(imagePages.CodePage);
+        //                    newImage.Save(fileName);
+        //                    imagePages.ImagePagesScraps.Add(true, fileName);
+        //                }
+
+        //            }
+        //        }
+        //    }
+        //}
 
         private void ImageRotate(Image image, string fileName)
         {
             image.RotateFlip(RotateFlipType.Rotate90FlipXY);
             image.Save(fileName);
         }
+
+        //private void GetHeaderDataFromScraps()
+        //{
+        //    foreach (BECTSFormat formats in ApprovedFormats)
+        //    {
+        //        //COPIO PLANTILLA CON NOMBRE DE FORMATO.
+        //        string filename = ScrapsDirectory + formats.FormatCode + @"\plantilla\" + "Plantilla abono CTS" + " - " + formats.FormatCode + ".xlsx";
+
+        //        //TODO: validar si el archivo existe y marcarlo en el log.
+        //        File.Copy(TemplatesDirectory + "Plantilla abono CTS.xlsx", filename, true);
+        //        using (SpreadsheetDocument document = SpreadsheetDocument.Open(filename, true))
+        //        {
+        //            //TODO: Validar si el header no existe no se procesa nada... a menos que se puedan traer los datos de algún lado adicional...
+        //            string t = formats.LstBECTSImagePages[0].CodePage + "_0_Header_RUC";
+        //            List<string> dataCol2 = GetData(t);
+
+        //            t = formats.LstBECTSImagePages[0].CodePage + "_0_Header_FormatCode";
+        //            dataCol2 = GetData(t);
+
+        //            t = formats.LstBECTSImagePages[0].CodePage + "_0_Header_Period";
+        //            dataCol2 = GetData(t);
+        //            t = formats.LstBECTSImagePages[0].CodePage + "_0_Header_Year";
+        //            dataCol2 = GetData(t);
+        //            t = formats.LstBECTSImagePages[0].CodePage + "_0_Header_Currency";
+        //            dataCol2 = GetData(t);
+        //        }
+        //    }
+        //}
+
         //TODO: falta extraer los que tienen la tabla del tamaño de toda la hoja
         private void GetDataFromScraps()
         {
@@ -457,72 +849,171 @@ namespace To.Rpa.AppCTS.BL
                     uint lastRowCountImagePage = 0;
                     uint lastRowCountImagePageTemp = 0;
 
-                    foreach (BECTSImagePages imagePages in formats.LstBECTSImagePages)
+                    foreach (BECTSImagePage imagePages in formats.LstBECTSImagePages)
                     {
                         int initialCol = 2;
                         string col = "";
                         //TODO: el salto de lineas en blanco debe ser parámetro, o hago método que evalue q tanto se parece la cadena al nombre que devuelve la búsqueda por dni en la reniec. o ignoro la columna nombres y apellidos desde el pdf y la pinto desde reniec.
                         //le agregamos más 2  espacios en blanco en caso se salte uno o máximo dos por error.
                         lastRowCountImagePage += lastRowCountImagePageTemp;
-                        foreach (string scrap in imagePages.ImagePagesScraps)
+                        foreach (BECTSScrap scrap in imagePages.ImagePagesScraps)
                         {
-                            //TODO: al terminar de grabar en el excel se dan errores que se pueden autoreparar en el excel. STACKOVERFLOW
-                            actualRow = 0;
-                            switch (initialCol)
+                            if (!scrap.isHeaderValue)
                             {
-                                case 2: col = "C"; break;
-                                case 3: col = "D"; break;
-                                case 4: col = "E"; break;
-                                case 5: col = "F"; break;
-                                case 6: col = "G"; break;
-                                case 7: col = "H"; break;
-                                case 8: col = "I"; break;
-                                case 9: col = "J"; break;
-                                default: col = "K"; break; //10
-                            }
-                            //TODO:EL TIPO DE DOCUMENTO NO ESTÁ LEYENDO NADA.
-                            List<string> dataCol2 = GetData(scrap);
-                            foreach (string data in dataCol2)
-                            {
-                                //TODO: AL PARECER EL PRIMER REGISTRO ES VACIO SIEMPRE, PERO PODRÍA DARSE EL CASO Q EN EL MEDIO TMB SE ENCUENTRE VACIO, SOLO IMPORTA Q NO SALGA VACIO AL MEDIO EN DNI.
-                                //row1Col0 = GetCellValue(document, "DATA", "A2");
-                                if (data.Trim() != "")
+                                //TODO: al terminar de grabar en el excel se dan errores que se pueden autoreparar en el excel. STACKOVERFLOW
+                                actualRow = 0;
+                                switch (initialCol)
                                 {
-                                    string dataRepaired = data;
-
-                                    if (col == "E")
+                                    case 2: col = "C"; break;
+                                    case 3: col = "D"; break;
+                                    case 4: col = "E"; break;
+                                    case 5: col = "F"; break;
+                                    case 6: col = "G"; break;
+                                    case 7: col = "H"; break;
+                                    case 8: col = "I"; break;
+                                    case 9: col = "J"; break;
+                                    default: col = "K"; break; //10
+                                }
+                                //TODO:EL TIPO DE DOCUMENTO NO ESTÁ LEYENDO NADA.
+                                List<string> dataCol2 = GetData(scrap.ScrapPath);
+                                foreach (string data in dataCol2)
+                                {
+                                    //TODO: AL PARECER EL PRIMER REGISTRO ES VACIO SIEMPRE, PERO PODRÍA DARSE EL CASO Q EN EL MEDIO TMB SE ENCUENTRE VACIO, SOLO IMPORTA Q NO SALGA VACIO AL MEDIO EN DNI.
+                                    //row1Col0 = GetCellValue(document, "DATA", "A2");
+                                    if (data.Trim() != "")
                                     {
-                                        dataRepaired = repairID("", data);
-                                    }
+                                        string dataRepaired = data;
 
-                                    if (col == "F")
-                                    {
-                                        dataRepaired = repairAccountNumber("", data);
-                                    }
+                                        if (col == "E")
+                                        {
+                                            dataRepaired = repairID("", data);
+                                        }
 
-                                    if (col == "H" || col == "J")
-                                    {
-                                        dataRepaired = repairAmount(data);
-                                    }
+                                        if (col == "F")
+                                        {
+                                            dataRepaired = repairAccountNumber("", data);
+                                        }
 
-                                    UpdateCell(document, dataRepaired, 25 + actualRow + lastRowCountImagePage, col);
-                                    actualRow++;
+                                        if (col == "H" || col == "J")
+                                        {
+                                            dataRepaired = repairAmount(data);
+                                        }
+
+                                        UpdateCell(document, dataRepaired, 25 + actualRow + lastRowCountImagePage, col);
+                                        actualRow++;
+                                    }
+                                }
+                                initialCol++;
+
+                                if (col == "E")
+                                {
+                                    lastRowCountImagePageTemp = actualRow + 2;
                                 }
                             }
-                            initialCol++;
-
-                            if (col == "E")
+                            else
                             {
-                                lastRowCountImagePageTemp = actualRow + 2;
+                                //TODO: Validar si el header no existe no se procesa nada... a menos que se puedan traer los datos de algún lado adicional...
+                                List<string> dataCol2 = null;
+
+                                //TODO: VALIDA RUC
+                                switch (imagePages.ImagePagesScraps.IndexOf(scrap))
+                                {
+                                    case 0:
+                                        dataCol2 = GetData(scrap.ScrapPath);
+                                        UpdateCell(document, repairRUC(dataCol2), 5, "D"); break;
+                                    case 1:
+                                        //dataCol2 = GetData(scrap.ScrapPath);
+                                        UpdateCell(document, formats.FormatCode.ToString(), 5, "K"); break;
+                                    case 2:
+                                        dataCol2 = GetData(scrap.ScrapPath);
+                                        UpdateCell(document, repairPeriod(dataCol2), 7, "D"); break;
+                                    case 3:
+                                        dataCol2 = GetData(scrap.ScrapPath);
+                                        UpdateCell(document, repairYear(dataCol2), 7, "H"); break;
+                                    case 4:
+                                        dataCol2 = GetData(scrap.ScrapPath);
+                                        UpdateCell(document, /*repairCurrency(dataCol2)*/ "DOL", 7, "K"); break;
+
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        private string repairYear(List<string> lst)
+        {
+            string year = "";
+            DateTime yearTemp;
+            foreach (string str in lst)
+            {
+                if (str.Trim() == "")
+                    continue;
+                year = Regex.Replace(str, @"[^\d]", String.Empty);
+
+                if (Regex.IsMatch(year, @"\d{4}"))
+                {
+                    if (DateTime.TryParse("01/01/" + year, out yearTemp))
+                        return year;
+                }
+            }
+            return "";
+            //TODO: grabar en log si el ruc está en vacío.
+        }
+
+        private string repairCurrency(List<string> lst)
+        {
+            string currency = "";
+            List<string> currencies = new List<string>() { "SOL", "DOL" };
+
+            foreach (string str in lst)
+            {
+                if (str.Trim() == "")
+                    continue;
+                currency = Regex.Replace(str, @"[^\p{L}]", String.Empty);
+
+                if (currencies.Contains(currency))
+                    return currency;
+            }
+            return "";
+            //TODO: grabar en log si el ruc está en vacío.
+        }
+
+        private string repairPeriod(List<string> lst)
+        {
+            List<string> periods = new List<string>() { "MAY", "NOV" };
+            string period = "";
+            foreach (string str in lst)
+            {
+                if (str.Trim() == "")
+                    continue;
+                period = Regex.Replace(str, @"[^\p{L}]", String.Empty);
+
+                if (periods.Contains(period))
+                    return period;
+            }
+            return "";
+        }
+
+        private string repairRUC(List<string> lst)
+        {
+            string ruc = "";
+            foreach (string str in lst)
+            {
+                if (str.Trim() == "")
+                    continue;
+                ruc = Regex.Replace(str, @"[^\d]", String.Empty).PadLeft(11, '0');
+
+                if (Regex.IsMatch(ruc, @"\d{11}"))
+                    return ruc;
+            }
+            return "";
+            //TODO: grabar en log si el ruc está en vacío.
+        }
 
         private string repairID(string names, string ID)
         {
+            //TODO, poner rojo si no cumple.
             string newID = Regex.Replace(ID, @"[^\d]", String.Empty).PadLeft(8, '0');
 
             if (Regex.IsMatch(newID, @"\d{8}"))
@@ -774,7 +1265,7 @@ namespace To.Rpa.AppCTS.BL
             try
             {
                 //TODO: si va a ser solo números ubicar el engine en inglés, es más rápido al parecer... .
-                using (var engine = new TesseractEngine(@"./Dictionaries/Teserract", "eng", EngineMode.Default))
+                using (var engine = new TesseractEngine(@"./Dictionaries/Tesseract/eng", "eng", EngineMode.Default))
                 {
 
                     using (var img = Pix.LoadFromFile(scrapPath))
@@ -808,22 +1299,26 @@ namespace To.Rpa.AppCTS.BL
         {
             List<string> lstIDs = GetData(scrapIDPath);
 
-            //TODO: meter el minimunAccepted en appconfig
-            Int16 minimunAccepted = (Int16)(lstIDs.Count / 2);
-            Int16 accepted = 0;
-            foreach (string ID in lstIDs)
+            if (lstIDs.Count > 0)
             {
-                if (Regex.IsMatch(ID, @"\d{8}"))
-                //if (Regex.Match(ID, @"\d{8}").Success)
+                //TODO: meter el minimunAccepted en appconfig
+                Int16 minimunAccepted = (Int16)(lstIDs.Count / 2);
+                Int16 accepted = 0;
+                foreach (string ID in lstIDs)
                 {
-                    accepted++;
+                    if (Regex.IsMatch(ID, @"\d{8}"))
+                    //if (Regex.Match(ID, @"\d{8}").Success)
+                    {
+                        accepted++;
+                    }
                 }
-            }
 
-            if (accepted > minimunAccepted)
-            {
-                //TODO: guardar lo le´´ido para optimziar.
-                return true;
+                if (accepted >= minimunAccepted)
+                {
+                    //TODO: guardar lo le´´ido para optimziar.
+                    return true;
+                }
+                return false;
             }
 
             else return false;
@@ -945,3 +1440,23 @@ namespace To.Rpa.AppCTS.BL
         //}
     }
 }
+/*
+el log con un orden...
+integrar método de validación ibs
+que muevan las plantillas finanles de cada format code a carpeta final.
+que las que no se aprueban pasen a error
+
+probar
+
+identificar errores.
+
+obtener datos de la cabecera.
+
+hacer bucle infito en el main que pare con un valor en un archivo de texto.
+
+revisar todos y realizar lo que se indica.
+
+
+corregir las dimensiones de una manera dinámica
+
+incluir parte de felix.*/

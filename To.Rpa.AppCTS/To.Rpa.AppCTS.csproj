@@ -14,7 +14,7 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <PlatformTarget>x64</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -37,8 +37,8 @@
       <HintPath>..\packages\DocumentFormat.OpenXml.2.8.1\lib\net40\DocumentFormat.OpenXml.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="itextsharp, Version=5.5.13.0, Culture=neutral, PublicKeyToken=8354ae6d2174ddca, processorArchitecture=MSIL">
-      <HintPath>..\RPA\packages\iTextSharp.5.5.13\lib\itextsharp.dll</HintPath>
+    <Reference Include="Ghostscript.NET, Version=1.2.1.0, Culture=neutral, PublicKeyToken=f85051de34525b59, processorArchitecture=MSIL">
+      <HintPath>..\packages\Ghostscript.NET.1.2.1\lib\net40\Ghostscript.NET.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="NHunspell, Version=1.2.5554.16953, Culture=neutral, PublicKeyToken=1ac793ea843b4366, processorArchitecture=MSIL">
@@ -71,90 +71,90 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="App.config" />
-    <None Include="Dictionaries\Hunspell\es_ES.aff">
+    <None Include="App.config">
+      <SubType>Designer</SubType>
+    </None>
+    <None Include="Dictionaries\Hunspell\es_ES.aff" />
+    <None Include="Dictionaries\Hunspell\es_ES.dic" />
+    <None Include="Dictionaries\Tesseract\eng\tessdata\eng.cube.bigrams">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Hunspell\es_ES.dic">
+    <None Include="Dictionaries\Tesseract\eng\tessdata\eng.cube.fold">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\desired_characters" />
-    <None Include="Dictionaries\Teserract\eng\eng.cube.bigrams">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="Dictionaries\Teserract\eng\eng.cube.fold">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="Dictionaries\Teserract\eng\eng.cube.lm">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="Dictionaries\Teserract\eng\eng.cube.nn">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="Dictionaries\Teserract\eng\eng.cube.params">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="Dictionaries\Teserract\eng\eng.cube.size">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="Dictionaries\Teserract\eng\eng.cube.word-freq">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="Dictionaries\Teserract\eng\eng.tesseract_cube.nn">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="Dictionaries\Teserract\eng\eng.traineddata">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-    <None Include="Dictionaries\Teserract\esp\spa.cube.bigrams">
+    <None Include="Dictionaries\Tesseract\eng\tessdata\eng.cube.lm">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.cube.fold">
+    <None Include="Dictionaries\Tesseract\eng\tessdata\eng.cube.nn">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.cube.lm">
+    <None Include="Dictionaries\Tesseract\eng\tessdata\eng.cube.params">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.cube.nn">
+    <None Include="Dictionaries\Tesseract\eng\tessdata\eng.cube.size">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.cube.params">
+    <None Include="Dictionaries\Tesseract\eng\tessdata\eng.cube.word-freq">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.cube.size">
+    <None Include="Dictionaries\Tesseract\eng\tessdata\eng.tesseract_cube.nn">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.cube.word-freq">
+    <None Include="Dictionaries\Tesseract\eng\tessdata\eng.traineddata">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.numbers">
+    <None Include="Dictionaries\Tesseract\esp\tessdata\desired_characters">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.params-model">
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.cube.bigrams">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.punc">
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.cube.fold">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.traineddata">
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.cube.lm">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.training_text">
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.cube.nn">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.training_text.bigram_freqs">
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.cube.params">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.training_text.unigram_freqs">
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.cube.size">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.unicharambigs">
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.cube.word-freq">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.word.bigrams">
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.numbers">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="Dictionaries\Teserract\esp\spa.wordlist">
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.params-model">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.punc">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.traineddata">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.training_text">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.training_text.bigram_freqs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.training_text.unigram_freqs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.unicharambigs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.word.bigrams">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="Dictionaries\Tesseract\esp\tessdata\spa.wordlist">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="packages.config" />
@@ -185,6 +185,7 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
