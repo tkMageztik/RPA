@@ -38,6 +38,7 @@ namespace To.Rpa.AppCTS.BE
     public class BECTSScrap
     {
         public string ScrapPath { get; set; }
+        public string Type { get; set; }
         public bool isHeaderValue { get; set; } = false;
     }
 }

@@ -13,16 +13,17 @@ namespace To.Rpa.AppCTS
 {
     public class AppCTS
     {
-        public AppCTS() {
-
+        public AppCTS()
+        {
             //TODO: Para configurar máximos intentos
+            UInt16 attempts = Convert.ToUInt16(ConfigurationManager.AppSettings["Attemps"]);
             int i = 0;
-            try
+            do
             {
-                UInt16 attempts = Convert.ToUInt16(ConfigurationManager.AppSettings["Attemps"]);
-
-                do
+                try
                 {
+
+
                     Assembly assembly = Assembly.GetExecutingAssembly();
                     FileVersionInfo fvi = FileVersionInfo.GetVersionInfo(assembly.Location);
 
@@ -30,19 +31,20 @@ namespace To.Rpa.AppCTS
                     Methods.LogProceso("Se inicia proceso de AppCTS: " + fvi.ProductName + " -> " + MethodBase.GetCurrentMethod().Name);
 
                     new BLMain().DoActivities();
+
                 }
-                while (i < attempts);
+                catch (Exception exc)
+                {
+                    i++;
+                    Methods.LogProceso(" ERROR: " + exc.StackTrace + " " + MethodBase.GetCurrentMethod().Name);
+                    //CloseEmulator();
+                }
+                finally
+                {
+                    Methods.LogProceso(" FINALLY: Intento nro: " + i);
+                }
             }
-            catch (Exception exc)
-            {
-                i++;
-                Methods.LogProceso(" ERROR: " + exc.StackTrace + " " + MethodBase.GetCurrentMethod().Name);
-                //CloseEmulator();
-            }
-            finally
-            {
-                Methods.LogProceso(" FINALLY: Intento nro: " + i);
-            }
+            while (i < attempts);
         }
     }
 }
