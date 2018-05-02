@@ -231,7 +231,7 @@ namespace To.Rpa.AppCTS.BL
                     DirectoryInfo userFinal = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()));
 
                     DirectoryInfo[] directories = userFinal.GetDirectories(format.FormatCode + "*");
-
+                     
                     if (directories.Length > 0)
                     {
                         finalFormatDirectory.MoveTo(FinalFormatDirectory + "_" + directories.Length);
