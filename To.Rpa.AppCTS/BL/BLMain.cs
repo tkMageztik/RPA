@@ -159,7 +159,7 @@ namespace To.Rpa.AppCTS.BL
 
                     if (!RestManual)
                     {
-                        //Thread.CurrentThread.IsBackground = true;
+                        Thread.CurrentThread.IsBackground = true;
                         /* run your code here */
                         Log("Inicio atención de proceso manual");
                         GetDataManualFromScraps();
@@ -180,7 +180,7 @@ namespace To.Rpa.AppCTS.BL
                 Log("Detengo proceso manual de forma normal");
             });
 
-            //automaticProcess.Start();
+            automaticProcess.Start();
             manualProcess.Start();
 
             Log("Rutina de inicialización Karenx 0.9 completada");
@@ -225,7 +225,22 @@ namespace To.Rpa.AppCTS.BL
                 foreach (BECTSFormat format in ApprovedFormats)
                 {
                     //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
-                    DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString(), "PLANTILLA"));
+
+                    DirectoryInfo finalFormatDirectory = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()));
+
+                    DirectoryInfo userFinal = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()));
+
+                    DirectoryInfo[] directories = userFinal.GetDirectories(format.FormatCode + "*");
+
+                    if (directories.Length > 0)
+                    {
+                        finalFormatDirectory.MoveTo(FinalFormatDirectory + "_" + directories.Length);
+                    }
+                    else
+                    {
+                        finalFormatDirectory.MoveTo(FinalFormatDirectory);
+                    }
+                    /*DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString(), "PLANTILLA"));
 
                     FileInfo[] files = finalFormat.GetFiles("*.xls*");
 
@@ -235,10 +250,8 @@ namespace To.Rpa.AppCTS.BL
                         //File.Move(file.FullName, FinalFormatDirectory + file.Name);
                         //TODO:cambiar por move más length...
                         File.Copy(file.FullName, FinalFormatDirectory + file.Name, true);
-                    }
+                    }*/
                 }
-
-
             }
             catch (Exception exc)
             {
@@ -254,16 +267,19 @@ namespace To.Rpa.AppCTS.BL
             {
                 foreach (BECTSFormat format in DisapprovedFormats)
                 {
-                    //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
-                    DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ManualScrapsDirectory, format.FormatCode.ToString(), "PLANTILLA"));
-
-                    FileInfo[] files = finalFormat.GetFiles("*.xls*");
-
-                    foreach (FileInfo file in files)
+                    if (format.Done)
                     {
-                        //File.Move(file.FullName, FinalFormatDirectory + file.Name);
-                        //TODO:cambiar por move más length...
-                        File.Copy(file.FullName, FinalFormatDirectory + file.Name, true);
+                        //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
+                        DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ManualScrapsDirectory, format.FormatCode.ToString(), "PLANTILLA"));
+
+                        FileInfo[] files = finalFormat.GetFiles("*.xls*");
+
+                        foreach (FileInfo file in files)
+                        {
+                            //File.Move(file.FullName, FinalFormatDirectory + file.Name);
+                            //TODO:cambiar por move más length...
+                            File.Copy(file.FullName, FinalFormatDirectory + file.Name, true);
+                        }
                     }
                 }
 
@@ -1434,9 +1450,16 @@ namespace To.Rpa.AppCTS.BL
                         }
 
                         var propertyInfo = formatDetails[i].GetType().GetProperty(scrapType);
-                        dataRepaired = Convert.ChangeType(dataRepaired, propertyInfo.PropertyType).ToString();
-
-                        propertyInfo.SetValue(formatDetails[i], Convert.ChangeType(dataRepaired, propertyInfo.PropertyType), null);
+                        try
+                        {
+                            dataRepaired = Convert.ChangeType(dataRepaired, propertyInfo.PropertyType).ToString();
+                            propertyInfo.SetValue(formatDetails[i], Convert.ChangeType(dataRepaired, propertyInfo.PropertyType), null);
+                        }
+                        catch
+                        {
+                            dataRepaired = "0.0";
+                            propertyInfo.SetValue(formatDetails[i], Convert.ChangeType(dataRepaired, propertyInfo.PropertyType), null);
+                        }
                         UpdateCell(document, dataRepaired, 25 + rowIndex, col);
                         rowIndex++;
 
