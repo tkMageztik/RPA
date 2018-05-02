@@ -11,12 +11,12 @@ namespace To.Rpa.AppCTS.BE
         public string Id { get; set; }
         public string NombresYApellidos { get; set; }
         public string TipDoc { get; set; }
-        public UInt16 NroDoc { get; set; }
+        public string NroDoc { get; set; }
 
-        public UInt16 NroCta { get; set; }
+        public string NroCta { get; set; }
         public string CtaMoneda { get; set; }
         public decimal AbonoMonto { get; set; }
-        public decimal AbonoMoneda { get; set; }
+        public string AbonoMoneda { get; set; }
         public decimal RemuMonto { get; set; }
         public string RemuMoneda { get; set; }
 

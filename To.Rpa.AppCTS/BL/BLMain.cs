@@ -1,6 +1,7 @@
 ﻿using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
+using Ghostscript.NET;
 using Ghostscript.NET.Rasterizer;
 using IBM.Data.DB2.iSeries;
 using NHunspell;
@@ -12,6 +13,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Tesseract;
 using To.Rpa.AppCTS.BE;
 using To.Rpa.Util;
@@ -26,9 +28,12 @@ namespace To.Rpa.AppCTS.BL
         private string OriginSharedDirectory { get; set; }
         private string OriginDirectory { get; set; }
         private string ScrapsDirectory { get; set; }
+        private string ManualScrapsDirectory { get; set; }
         private string TemplatesDirectory { get; set; }
         private string WrongPdfsDirectory { get; set; }
         private string FinalFormatDirectory { get; set; }
+        private string GSDllDirectory { get; set; }
+
         private List<BECTSFormat> ApprovedFormats { get; set; }
         private List<BECTSFormat> DisapprovedFormats { get; set; }
         private List<BECTSImagePage> Col2ImagesPagesTemp { get; set; }
@@ -45,11 +50,14 @@ namespace To.Rpa.AppCTS.BL
         private string JarDirectory { get; set; }
         private UInt16 Attempts { get; set; }
 
+        private bool Stop { get; set; }
+
         public BLMain()
         {
             OriginSharedDirectory = ConfigurationManager.AppSettings["OriginSharedDirectory"];
             OriginDirectory = ConfigurationManager.AppSettings["OriginDirectory"];
             ScrapsDirectory = ConfigurationManager.AppSettings["ScrapsDirectory"];
+            ManualScrapsDirectory = ConfigurationManager.AppSettings["ManualScrapsDirectory"];
             TemplatesDirectory = ConfigurationManager.AppSettings["TemplatesDirectory"];
             TesseractLanguage = ConfigurationManager.AppSettings["TesseractLanguage"];
             WrongPdfsDirectory = ConfigurationManager.AppSettings["WrongPdfsDirectory"];
@@ -62,6 +70,9 @@ namespace To.Rpa.AppCTS.BL
             XDpi = Convert.ToUInt16(ConfigurationManager.AppSettings["XDpi"]);
             YDpi = Convert.ToUInt16(ConfigurationManager.AppSettings["YDpi"]);
             Attempts = Convert.ToUInt16(ConfigurationManager.AppSettings["Attempts"]);
+            GSDllDirectory = ConfigurationManager.AppSettings["GSDllDirectory"];
+
+            Stop = Convert.ToBoolean(ConfigurationManager.AppSettings["Stop"]);
 
             //TODO, no debería ser lazy load... .
             //ApprovedFormatsByName = new List<string>();
@@ -74,23 +85,85 @@ namespace To.Rpa.AppCTS.BL
         public void DoActivities()
         {
             Log("Inicia Karenx 0.9");
-            GetFormatsFromSharedDirectory();/*1*/
-            //GetPdfFromMailBox();
-            CreateFoldersByEachFormat();/*1*/
-            ExtractImagesFromFormats();/*1*/
-            //ImproveImagesFromPdf(); /*1*/
-            GetApprovedFormats();/*1*/
-            //GetScrapsHeaderDataImages();
-            GetScrapsDataImages(); /*1 - en teoría si llego hasta acá, todo estará bien aunque no necesarimente copiado al 100%*/
-            //GetScrapsDataImagesFull();
-            //GetHeaderDataFromScraps();
-            GetDataFromScraps();/*1*/
-            //GetDataFullFromRaw();/*1*/
-            MoveFinalFormats(); /*1*/
-            MoveFormatsNoProcess();/*1*/ //lvl 01
-            MoveScrapsErrorProcess();/*1*/
-            BackupScrapsCorrectProcess();/*1*/
+
+            Thread automaticProcess = new Thread(() =>
+            {
+                do
+                {
+                    Thread.CurrentThread.IsBackground = true;
+                    GetFormatsFromSharedDirectory();/*1*/
+                                                    //GetPdfFromMailBox();
+                    CreateFoldersByEachFormat();/*1*/
+                    ExtractImagesFromFormats();/*1*/
+                                               //ImproveImagesFromPdf(); /*1*/
+                    GetApprovedFormats();/*1*/
+
+                    CreateFoldersByEachDisapprovedFormat();/*1*/
+
+                    //GetScrapsHeaderDataImages();
+                    GetScrapsDataImages(); /*1 - en teoría si llego hasta acá, todo estará bien aunque no necesarimente copiado al 100%*/
+                                           //GetScrapsDataImagesFull();
+                                           //GetHeaderDataFromScraps();
+                    GetDataFromScraps();/*1*/
+                                        //GetDataManualFromScraps();/*1*/
+                                        //GetDataFullFromRaw();/*1*/
+                    MoveFinalFormats(); /*1*/
+                    MoveFormatsNoProcess();/*1*/ //lvl 01
+                    MoveScrapsErrorProcess();/*1*/
+                    BackupScrapsCorrectProcess();/*1*/
+
+                    ApprovedFormats.Clear();
+                    DisapprovedFormats.Clear();
+                }
+                while (!Stop);
+            });
+
+            Thread manualProcess = new Thread(() =>
+            {
+                do
+                {
+                    Thread.CurrentThread.IsBackground = true;
+                    /* run your code here */
+                    GetDataManualFromScraps();
+                }
+                while (!Stop);
+            });
+
+            automaticProcess.Start();
+            manualProcess.Start();
+
             Log("Termina Karenx 0.9");
+        }
+
+        private void CreateFoldersByEachDisapprovedFormat()
+        {
+            foreach (BECTSFormat format in DisapprovedFormats)
+            {
+                Log("#4.1| Inicia rutina #4.1 Crea carpetas por cada formato desaprobado dentro de la ruta: " + ManualScrapsDirectory);
+                try
+                {
+                    DirectoryInfo diScraps = new DirectoryInfo(ScrapsDirectory + format.FormatCode);
+                    DirectoryInfo diManual = new DirectoryInfo(ManualScrapsDirectory);
+
+                    if (diManual.GetDirectories(format.FormatCode + "*").Length == 0)
+                    {
+                        diScraps.MoveTo(ManualScrapsDirectory + format.FormatCode);
+                        Log("#4.1| Se movió hacia " + ManualScrapsDirectory + format.FormatCode);
+                    }
+                    else
+                    {
+                        Log("#4.1| Ya existe el directorio " + ManualScrapsDirectory + format.FormatCode);
+                    }
+
+                    //diManual.GetDirectories("PLANTILLA")[0].Delete(true);
+                }
+                catch (Exception exc)
+                {
+                    Methods.LogProceso("#4.1| ERROR: " + exc.ToString());
+                }
+            }
+
+            Log("#4.1| Termina rutina #4.1");
         }
 
         private void MoveFinalFormats()
@@ -351,9 +424,11 @@ namespace To.Rpa.AppCTS.BL
         {
             try
             {
+                GhostscriptVersionInfo gvi = new GhostscriptVersionInfo(GSDllDirectory);
+
                 using (var rasterizer = new GhostscriptRasterizer()) //create an instance for GhostscriptRasterizer
                 {
-                    rasterizer.Open(inputFilePath); //opens the PDF file for rasterizing
+                    rasterizer.Open(inputFilePath, gvi, true); //opens the PDF file for rasterizing
                     if (pageNumber == 0)
                     {
                         for (int i = 0; i < rasterizer.PageCount; i++)
@@ -570,11 +645,14 @@ namespace To.Rpa.AppCTS.BL
                     }
                     else
                     {
+                        /*if (DisapprovedFormats.Find(x => x.FormatCode == int.Parse(directoryName)) != null)
+                        {*/
                         DisapprovedFormats.Add(new BECTSFormat
                         {
                             FormatCode = int.Parse(directoryName),
                             LstBECTSImagePages = lstBECTSImagePages
                         });
+                        /*}*/
                     }
 
                 }
@@ -607,19 +685,18 @@ namespace To.Rpa.AppCTS.BL
                             if (imagePages.isHeader)
                             {
                                 //TODO: debería dejar todos en horizontal.
-                                //RUC
                                 //newImage = Methods.cropAtRect(image, new Rectangle(2200, 200, 1500, 700));
                                 newImage = Methods.cropAtRect(image, new Rectangle(1100, 100, 750, 350));
                                 fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_RUC" + Path.GetExtension(imagePages.CodePage);
                                 newImage.Save(fileName);
-                                imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = true, ScrapPath = fileName });
+                                imagePages.ImagePagesScraps.Add(new BECTSScrap { Type = "RUC", isHeaderValue = true, ScrapPath = fileName });
 
                                 //CODIGO_LISTADO
                                 //newImage = Methods.cropAtRect(image, new Rectangle(7480, 200, image.Width - 7480, 700));
                                 newImage = Methods.cropAtRect(image, new Rectangle(3740, 100, image.Width - 3740, 350));
                                 fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_FormatCode" + Path.GetExtension(imagePages.CodePage);
                                 newImage.Save(fileName);
-                                imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = true, ScrapPath = fileName });
+                                imagePages.ImagePagesScraps.Add(new BECTSScrap { Type = "CODIGO_LISTADO", isHeaderValue = true, ScrapPath = fileName });
 
                                 //TODO:PUEDE OBTENERSE EL PERIODO DE OTRA MANERA.
                                 //PERIODO
@@ -627,21 +704,21 @@ namespace To.Rpa.AppCTS.BL
                                 newImage = Methods.cropAtRect(image, new Rectangle(1100, 170, 750, 350));
                                 fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_Period" + Path.GetExtension(imagePages.CodePage);
                                 newImage.Save(fileName);
-                                imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = true, ScrapPath = fileName });
+                                imagePages.ImagePagesScraps.Add(new BECTSScrap { Type = "PERIODO", isHeaderValue = true, ScrapPath = fileName });
 
                                 //AÑO
                                 //newImage = Methods.cropAtRect(image, new Rectangle(4880, 340, 1500, 700));
                                 newImage = Methods.cropAtRect(image, new Rectangle(2440, 170, 750, 350));
                                 fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_Year" + Path.GetExtension(imagePages.CodePage);
                                 newImage.Save(fileName);
-                                imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = true, ScrapPath = fileName });
+                                imagePages.ImagePagesScraps.Add(new BECTSScrap { Type = "ANIO", isHeaderValue = true, ScrapPath = fileName });
 
                                 //MONEDA ABONO
                                 //newImage = Methods.cropAtRect(image, new Rectangle(7480, 200, image.Width - 7480, 860));
                                 newImage = Methods.cropAtRect(image, new Rectangle(3740, 100, image.Width - 3740, 430));
                                 fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_Header_Currency" + Path.GetExtension(imagePages.CodePage);
                                 newImage.Save(fileName);
-                                imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = true, ScrapPath = fileName });
+                                imagePages.ImagePagesScraps.Add(new BECTSScrap { Type = "MONEDA", isHeaderValue = true, ScrapPath = fileName });
                             }
 
                             //COLUMNA 2 - NOMBRES Y APELLIDOS
@@ -657,7 +734,7 @@ namespace To.Rpa.AppCTS.BL
                             }
                             fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_2" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
-                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "NOMBRES_APELLIDOS" });
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "NombresYApellidos" });
 
                             //COLUMNA 3 - TIPO DOCUMENTO
                             if (imagePages.isHeader)
@@ -670,10 +747,10 @@ namespace To.Rpa.AppCTS.BL
                             }
                             fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_3" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
-                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "TIP_DOC" });
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "TipDoc" });
 
                             //COLUMNA 4 - NRO DOCUMENTO
-                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, Type = "DNI", ScrapPath = Col2ImagesPagesTemp.Where(x => x.CodePage == imagePages.CodePage).Select(x => x.ImagePagesScraps[0].ScrapPath).First() });
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, Type = "NroDoc", ScrapPath = Col2ImagesPagesTemp.Where(x => x.CodePage == imagePages.CodePage).Select(x => x.ImagePagesScraps[0].ScrapPath).First() });
 
                             //COLUMNA 5 - NRO CUENTA
                             if (imagePages.isHeader)
@@ -686,7 +763,7 @@ namespace To.Rpa.AppCTS.BL
                             }
                             fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_5" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
-                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "CTA" });
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "NroCta" });
 
                             //COLUMNA 6 - CUENTA > MONEDA
                             if (imagePages.isHeader)
@@ -699,7 +776,7 @@ namespace To.Rpa.AppCTS.BL
                             }
                             fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_6" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
-                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "MONEDA_CTA" });
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "CtaMoneda" });
 
                             //COLUMNA 7 - ABONO > MONTO
                             if (imagePages.isHeader)
@@ -713,7 +790,7 @@ namespace To.Rpa.AppCTS.BL
                             }
                             fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_7" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
-                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "MONTO_ABONO" });
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "AbonoMonto" });
 
                             //COLUMNA 8 - ABONO > MONEDA
                             if (imagePages.isHeader)
@@ -726,7 +803,7 @@ namespace To.Rpa.AppCTS.BL
                             }
                             fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_8" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
-                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "MONEDA_ABONO" });
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "AbonoMoneda" });
 
                             //COLUMNA 9 - 4 REMUNERACIONES > MONTO
                             if (imagePages.isHeader)
@@ -739,7 +816,7 @@ namespace To.Rpa.AppCTS.BL
                             }
                             fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_9" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
-                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "MONTO_REMU" });
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "RemuMonto" });
 
                             //COLUMNA 10 - 4 REMUNERACIONES > MONEDA
                             if (imagePages.isHeader)
@@ -752,7 +829,7 @@ namespace To.Rpa.AppCTS.BL
                             }
                             fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_10" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
-                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "MONEDA_REMU" });
+                            imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "RemuMoneda" });
 
                             //imagePages.ImagePagesScraps = imagePages.ImagePagesScraps.OrderBy(x => x).ToList();
                         }
@@ -830,17 +907,17 @@ namespace To.Rpa.AppCTS.BL
         //        {
         //            //TODO: Validar si el header no existe no se procesa nada... a menos que se puedan traer los datos de algún lado adicional...
         //            string t = formats.LstBECTSImagePages[0].CodePage + "_0_Header_RUC";
-        //            List<string> dataCol2 = GetData(t);
+        //            List<string> dataCol = GetData(t);
 
         //            t = formats.LstBECTSImagePages[0].CodePage + "_0_Header_FormatCode";
-        //            dataCol2 = GetData(t);
+        //            dataCol = GetData(t);
 
         //            t = formats.LstBECTSImagePages[0].CodePage + "_0_Header_Period";
-        //            dataCol2 = GetData(t);
+        //            dataCol = GetData(t);
         //            t = formats.LstBECTSImagePages[0].CodePage + "_0_Header_Year";
-        //            dataCol2 = GetData(t);
+        //            dataCol = GetData(t);
         //            t = formats.LstBECTSImagePages[0].CodePage + "_0_Header_Currency";
-        //            dataCol2 = GetData(t);
+        //            dataCol = GetData(t);
         //        }
         //    }
         //}
@@ -873,6 +950,7 @@ namespace To.Rpa.AppCTS.BL
                     //int i = 0;
                     if (reader.Read())
                     {
+                        //TODO: atentos por si devuelve más de uno, igual se devuelve índice 0.
                         id2 = reader[0].ToString();//devuelve un valor del campo respectivo
                     }
                     reader.Close();
@@ -910,6 +988,124 @@ namespace To.Rpa.AppCTS.BL
                 index++;
             }
         }
+        //TODO mandar a util. / ver si al final va a servir o no.
+        //public static IEnumerable<T> SortAndDedupe<T>(this IEnumerable<T> input)
+        //{
+        //    var toDedupe = input.OrderBy(x => x);
+
+        //    T prev = default(T);
+        //    foreach (var element in toDedupe)
+        //    {
+        //        //if (element == prev) continue;
+        //        if (EqualityComparer<T>.Default.Equals(element, prev)) continue;
+
+        //        yield return element;
+        //        prev = element;
+        //    }
+        //}
+
+        private void GetDataManualFromScraps()
+        {
+            Log("#6.1| Inicia rutina #6 Obtiene data de los Scraps");
+
+            DirectoryInfo diManual = new DirectoryInfo(ManualScrapsDirectory);
+            DirectoryInfo[] directories = diManual.GetDirectories("*_OK");
+            try
+            {
+                for (int i = 0; i < directories.Length; i++)
+                {
+                    /*foreach (BECTSFormat formats in ApprovedFormats)
+                    {*/
+
+                    string formatCode = directories[i].Name.Replace("_OK", "");
+
+                    //COPIO PLANTILLA CON NOMBRE DE FORMATO.
+                    string filename = directories[i].FullName + @"\PLANTILLA\" + "Plantilla abono CTS" + " - " + formatCode + ".xlsx";
+
+                    //TODO: validar si el archivo existe y marcarlo en el log.
+                    File.Copy(TemplatesDirectory + "Plantilla abono CTS.xlsx", filename, true);
+
+                    directories[i].MoveTo(directories[i].FullName.Replace("_OK", "_PROCESANDO"));
+
+                    uint actualRow = 0;
+
+                    List<BECTSFormatDetail> lst = new List<BECTSFormatDetail>();
+                    List<string> dataCol = GetData(Path.Combine(directories[i].FullName, "NombresYApellidos.png"));
+                    if (dataCol != null)
+                    {
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "NombresYApellidos");
+                    }
+
+                    dataCol = GetData(Path.Combine(directories[i].FullName, "TipDoc.png"));
+                    if (dataCol != null)
+                    {
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "TipDoc");
+                    }
+
+                    dataCol = GetData(Path.Combine(directories[i].FullName, "NroDoc.png"));
+                    if (dataCol != null)
+                    {
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "NroDoc");
+                    }
+
+                    dataCol = GetData(Path.Combine(directories[i].FullName, "NroCta.png"));
+                    if (dataCol != null)
+                    {
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "NroCta");
+                    }
+
+                    dataCol = GetData(Path.Combine(directories[i].FullName, "CtaMoneda.png"));
+                    if (dataCol != null)
+                    {
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "CtaMoneda");
+                    }
+
+                    dataCol = GetData(Path.Combine(directories[i].FullName, "AbonoMonto.png"));
+                    if (dataCol != null)
+                    {
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "AbonoMonto");
+                    }
+
+                    dataCol = GetData(Path.Combine(directories[i].FullName, "AbonoMoneda.png"));
+                    if (dataCol != null)
+                    {
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "AbonoMoneda");
+                    }
+
+                    dataCol = GetData(Path.Combine(directories[i].FullName, "RemuMonto.png"));
+                    if (dataCol != null)
+                    {
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "RemuMonto");
+                    }
+
+                    dataCol = GetData(Path.Combine(directories[i].FullName, "RemuMoneda.png"));
+                    if (dataCol != null)
+                    {
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "RemuMoneda");
+                    }
+                    //dataCol = GetData(directories[i].FullName + "NRODOC");
+                    //SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, directories[i].Name, "NroDoc");
+
+
+                    actualRow = 0;
+
+                }
+            }
+            catch (Exception exc)
+            {
+                Log("#6.1| ERROR: " + exc.ToString());
+            }
+            Log("#6.1| Termina rutina #6.1 ");
+        }
 
         private void GetDataFromScraps()
         {
@@ -923,126 +1119,172 @@ namespace To.Rpa.AppCTS.BL
 
                 //TODO: validar si el archivo existe y marcarlo en el log.
                 File.Copy(TemplatesDirectory + "Plantilla abono CTS.xlsx", filename, true);
-                using (SpreadsheetDocument document = SpreadsheetDocument.Open(filename, true))
+
+                uint actualRow = 0;
+                uint lastRowCountImagePage = 0;
+                uint lastRowCountImagePageTemp = 0;
+
+                // getValue(document, dni, col, "tipodoc");
+
+                foreach (BECTSImagePage imagePages in formats.LstBECTSImagePages)
                 {
-                    uint actualRow = 0;
-                    uint lastRowCountImagePage = 0;
-                    uint lastRowCountImagePageTemp = 0;
+                    //int initialCol = 2;
+                    //string col = "";
+                    //TODO: el salto de lineas en blanco debe ser parámetro, o hago método que evalue q tanto se parece la cadena al nombre que devuelve la búsqueda por dni en la reniec. o ignoro la columna nombres y apellidos desde el pdf y la pinto desde reniec.
+                    //le agregamos más 2  espacios en blanco en caso se salte uno o máximo dos por error.
+                    lastRowCountImagePage += lastRowCountImagePageTemp;
 
-                    // getValue(document, dni, col, "tipodoc");
-
-                    foreach (BECTSImagePage imagePages in formats.LstBECTSImagePages)
+                    foreach (BECTSScrap scrap in imagePages.ImagePagesScraps)
                     {
-                        //int initialCol = 2;
-                        string col = "";
-                        //TODO: el salto de lineas en blanco debe ser parámetro, o hago método que evalue q tanto se parece la cadena al nombre que devuelve la búsqueda por dni en la reniec. o ignoro la columna nombres y apellidos desde el pdf y la pinto desde reniec.
-                        //le agregamos más 2  espacios en blanco en caso se salte uno o máximo dos por error.
-                        lastRowCountImagePage += lastRowCountImagePageTemp;
+                        List<string> dataCol = GetData(scrap.ScrapPath);
 
-                        foreach (BECTSScrap scrap in imagePages.ImagePagesScraps)
+                        if (!scrap.isHeaderValue)
                         {
-                            if (!scrap.isHeaderValue)
-                            {
-                                actualRow = 0;
-                                List<string> dataCol2 = GetData(scrap.ScrapPath);
-                                foreach (string data in dataCol2)
-                                {
-                                    //bool isValid = false;
-                                    if (data.Trim() != "")
-                                    {
-                                        string dataRepaired = "";
+                            actualRow = 0;
 
-                                        switch (scrap.Type)
-                                        {
-                                            case "NOMBRES_APELLIDOS":
-                                                col = "C";
-                                                break;
-                                            case "TIP_DOC":
-                                                col = "D";
-                                                break;
-                                            case "DNI": //RUC
-                                                col = "E";
-                                                dataRepaired = repairID("", data);
-                                                if ("" != dataRepaired)
-                                                {
-                                                    //isValid = true;
-                                                    //dniList.Add(dataRepaired); //se guardan los dni
-                                                }
-                                                break;
-                                            case "CTA":
-                                                col = "F";
-                                                break;
-                                            case "MONEDA_CTA":
-                                                col = "G";
-                                                break;
-                                            case "MONTO_ABONO": //CODIGO LISTADO
-                                                col = "H";
-                                                dataRepaired = repairAmount(data);
-                                                break;
-                                            case "MONEDA_ABONO": //PERIODO
-                                                col = "I";
-                                                break;
-                                            case "MONTO_REMU": //PERIODO
-                                                col = "J";
-                                                dataRepaired = repairAmount(data);
-                                                break;
-                                            case "MONEDA_REMU": //PERIODO
-                                                col = "K";
-                                                break;
-                                        }
-                                        /*if (isValid)
-                                        {*/
-                                        /*if (col != "")
-                                        {*/
-                                        UpdateCell(document, dataRepaired, 25 + actualRow, col);
-                                        actualRow++;
-                                        /*   col = "";
-                                       }*/
-                                        /*}*/
+                            //dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).SortAndDedupe().ToList();
+                            //dtList = dtList.Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToList()
+                            dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
 
-                                    }
-                                }
+                            List<BECTSFormatDetail> lst = formats.LstBECTSFormatDetail;
+                            SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formats.FormatCode.ToString(), scrap.Type);
 
-                                /*
-                                initialCol++;
-
-                                if (col == "E")
-                                {
-                                    lastRowCountImagePageTemp = actualRow + 2;
-                                }*/
-                            }
-                            else
-                            {
-                                List<string> dataCol2 = null;
-                                switch (imagePages.ImagePagesScraps.IndexOf(scrap))
-                                {
-                                    case 0: //RUC
-                                        dataCol2 = GetData(scrap.ScrapPath);
-                                        UpdateCell(document, repairRUC(dataCol2), 5, "D"); break;
-                                    case 1: //CODIGO LISTADO
-                                        UpdateCell(document, formats.FormatCode.ToString(), 5, "K"); break;
-                                    case 2: //PERIODO
-                                        dataCol2 = GetData(scrap.ScrapPath);
-                                        UpdateCell(document, repairPeriod(dataCol2), 7, "D"); break;
-                                    case 3: //ANIO
-                                        dataCol2 = GetData(scrap.ScrapPath);
-                                        UpdateCell(document, repairYear(dataCol2), 7, "H"); break;
-                                    case 4: //MONEDA
-                                        dataCol2 = GetData(scrap.ScrapPath);
-                                        UpdateCell(document, repairCurrency(dataCol2), 7, "K"); break;
-
-                                }
-                            }
+                            formats.LstBECTSFormatDetail = lst;
                         }
-                        //completar los campos tipo documento,numero de cuenta, moneda cuenta, nombre
-                        //getValue(document, dniList, "C", "cusna1"); // nombres y apellidos
-                        //getValue(document, dniList, "D", "custid"); // tipo documento
-                        //getValue(document, dniList, "F", "acmacc"); // cuenta
-                        //getValue(document, dniList, "G", "acmccy"); // moneda cuenta
+                        else
+                        {
+                            //List<string> dataCol = GetData(scrap.ScrapPath);
+                            SetScrapsHeaderData(filename, dataCol, formats.FormatCode.ToString(), scrap.Type);
+                        }
                     }
                 }
             }
+            Log("#6| Termina rutina #6 ");
         }
+
+        private void SetScrapsHeaderData(string fileName, List<string> dataCol, string formatCode, string scrapType)
+        {
+            using (SpreadsheetDocument document = SpreadsheetDocument.Open(fileName, true))
+            {
+                try
+                {
+                    switch (scrapType)
+                    {
+                        case "RUC":
+                            UpdateCell(document, repairRUC(dataCol), 5, "D"); break;
+                        case "CODIGO_LISTADO":
+                            UpdateCell(document, formatCode, 5, "K"); break;
+                        case "PERIODO":
+                            UpdateCell(document, repairPeriod(dataCol), 7, "D"); break;
+                        case "ANIO":
+                            UpdateCell(document, repairYear(dataCol), 7, "H"); break;
+                        case "MONEDA":
+                            UpdateCell(document, repairCurrency(dataCol), 7, "K"); break;
+                    }
+                }
+                catch (Exception exc)
+                {
+                    Log("#6| SetScrapsHeaderData > - ERROR: " + exc.ToString());
+                }
+            }
+        }
+
+        private void SetScrapsDetailData(string fileName, ref uint rowIndex, ref List<BECTSFormatDetail> formatDetails, List<string> dataCol, string formatCode, string scrapType)
+        {
+            string col = "";
+
+            using (SpreadsheetDocument document = SpreadsheetDocument.Open(fileName, true))
+            {
+                try
+                {
+
+
+                    //completar los campos tipo documento,numero de cuenta, moneda cuenta, nombre
+                    //getValue(document, dniList, "C", "cusna1"); // nombres y apellidos
+                    //getValue(document, dniList, "D", "custid"); // tipo documento
+                    //getValue(document, dniList, "F", "acmacc"); // cuenta
+                    //getValue(document, dniList, "G", "acmccy"); // moneda cuenta
+
+                    //TODO: estamos suponiendo que la cantidad de filas no difiere entre columnas
+                    for (int i = 0; i < dataCol.Count; i++)
+                    {
+                        if (formatDetails.ElementAtOrDefault(i) == null)
+                        {
+                            formatDetails.Add(new BECTSFormatDetail());
+                        }
+
+                        string dataRepaired = "";
+
+                        switch (scrapType)
+                        {
+                            case "NombresYApellidos":
+                                col = "C";
+                                dataRepaired = dataCol[i];
+                                break;
+                            case "TipDoc":
+                                col = "D";
+                                dataRepaired = dataCol[i];
+                                break;
+                            case "NroDoc":
+                                col = "E";
+                                dataRepaired = repairID(formatDetails[i].NombresYApellidos, dataCol[i]);
+                                /*if ("" != dataRepaired)
+                                {
+                                    //isValid = true;
+                                    //dniList.Add(dataRepaired); //se guardan los dni
+                                }*/
+                                break;
+                            case "NroCta":
+                                col = "F";
+                                dataRepaired = repairAccountNumber("", dataCol[i]);
+                                break;
+                            case "CtaMoneda":
+                                col = "G";
+                                dataRepaired = dataCol[i];
+                                break;
+                            case "AbonoMonto": //CODIGO LISTADO
+                                col = "H";
+                                dataRepaired = repairAmount(dataCol[i]);
+                                break;
+                            case "AbonoMoneda": //PERIODO
+                                col = "I";
+                                dataRepaired = dataCol[i];
+                                break;
+                            case "RemuMonto": //PERIODO
+                                col = "J";
+                                dataRepaired = repairAmount(dataCol[i]);
+                                break;
+                            case "RemuMoneda": //PERIODO
+                                col = "K";
+                                dataRepaired = dataCol[i];
+                                break;
+                        }
+
+                        var propertyInfo = formatDetails[i].GetType().GetProperty(scrapType);
+                        dataRepaired = Convert.ChangeType(dataRepaired, propertyInfo.PropertyType).ToString();
+
+                        propertyInfo.SetValue(formatDetails[i], Convert.ChangeType(dataRepaired, propertyInfo.PropertyType), null);
+                        UpdateCell(document, dataRepaired, 25 + rowIndex, col);
+                        rowIndex++;
+
+                        /*
+                        initialCol++;
+
+                        if (col == "E")
+                        {
+                            lastRowCountImagePageTemp = actualRow + 2;
+                        }*/
+
+                        //formatDetails[i]."" = "";
+                    }
+                }
+                catch (Exception exc)
+                {
+                    Log("#6| > SetScrapsDetailData - ERROR: " + exc.ToString());
+                }
+            }
+        }
+
 
         private string repairYear(List<string> lst)
         {
@@ -1114,6 +1356,51 @@ namespace To.Rpa.AppCTS.BL
             //TODO: grabar en log si el ruc está en vacío.
         }
 
+        public static int Compute(string s, string t)
+        {
+            int n = s.Length;
+            int m = t.Length;
+            int[,] d = new int[n + 1, m + 1];
+
+            // Step 1
+            if (n == 0)
+            {
+                return m;
+            }
+
+            if (m == 0)
+            {
+                return n;
+            }
+
+            // Step 2
+            for (int i = 0; i <= n; d[i, 0] = i++)
+            {
+            }
+
+            for (int j = 0; j <= m; d[0, j] = j++)
+            {
+            }
+
+            // Step 3
+            for (int i = 1; i <= n; i++)
+            {
+                //Step 4
+                for (int j = 1; j <= m; j++)
+                {
+                    // Step 5
+                    int cost = (t[j - 1] == s[i - 1]) ? 0 : 1;
+
+                    // Step 6
+                    d[i, j] = Math.Min(
+                        Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                        d[i - 1, j - 1] + cost);
+                }
+            }
+            // Step 7
+            return d[n, m];
+        }
+
         private string repairID(string names, string ID)
         {
             string newID = Regex.Replace(ID, @"[^\d]", String.Empty).PadLeft(8, '0');
@@ -1123,6 +1410,13 @@ namespace To.Rpa.AppCTS.BL
                 if (Regex.IsMatch(newID, @"\d{8}"))
                 {
                     //TODO, si machea regex igual evaluar si existe dni con reniec... 
+
+
+                    //getValue(document, dniList, "C", "cusna1"); // nombres y apellidos
+
+                    //GetValor(newID, "cusna1");
+                    //int i = Compute(names, GetValor(newID, "cusna1"));
+
                     return newID;
                 }
             }
@@ -1385,7 +1679,8 @@ namespace To.Rpa.AppCTS.BL
                         {
                             //TODO: parece que el primer registro lo lee como salto de línea.
                             var text = page.GetText();
-
+                            Log("#6| " + page.GetMeanConfidence() * 100 + "% de Fiabilidad de imagen: " + Path.GetFileName(scrapPath));
+                            //TODO: DESDE ACÁ PODRÍAMOS ELIMINAR LOS BLANCOS... .
                             List<string> prev = text.Split(new string[] { "\n", "\r\n" }, StringSplitOptions.RemoveEmptyEntries).ToList<string>();
                             return prev;
                         }
