@@ -33,6 +33,7 @@ namespace To.Rpa.AppCTS.BL
         private string WrongPdfsDirectory { get; set; }
         private string FinalFormatDirectory { get; set; }
         private string GSDllDirectory { get; set; }
+        private string BackupDirectory { get; set; }
 
         private List<BECTSFormat> ApprovedFormats { get; set; }
         private List<BECTSFormat> DisapprovedFormats { get; set; }
@@ -50,7 +51,11 @@ namespace To.Rpa.AppCTS.BL
         private string JarDirectory { get; set; }
         private UInt16 Attempts { get; set; }
 
-        private bool Stop { get; set; }
+        private bool StopAuto { get; set; }
+        private bool RestAuto { get; set; }
+        private bool StopManual { get; set; }
+        private bool RestManual { get; set; }
+        private int Sleep { get; set; }
 
         public BLMain()
         {
@@ -71,8 +76,13 @@ namespace To.Rpa.AppCTS.BL
             YDpi = Convert.ToUInt16(ConfigurationManager.AppSettings["YDpi"]);
             Attempts = Convert.ToUInt16(ConfigurationManager.AppSettings["Attempts"]);
             GSDllDirectory = ConfigurationManager.AppSettings["GSDllDirectory"];
+            BackupDirectory = ConfigurationManager.AppSettings["BackupDirectory"];
 
-            Stop = Convert.ToBoolean(ConfigurationManager.AppSettings["Stop"]);
+            StopAuto = Convert.ToBoolean(ConfigurationManager.AppSettings["StopAuto"]);
+            RestAuto = Convert.ToBoolean(ConfigurationManager.AppSettings["RestAuto"]);
+            StopManual = Convert.ToBoolean(ConfigurationManager.AppSettings["StopManual"]);
+            RestManual = Convert.ToBoolean(ConfigurationManager.AppSettings["RestManual"]);
+            Sleep = Convert.ToInt32(ConfigurationManager.AppSettings["Sleep"]);
 
             //TODO, no debería ser lazy load... .
             //ApprovedFormatsByName = new List<string>();
@@ -86,53 +96,94 @@ namespace To.Rpa.AppCTS.BL
         {
             Log("Inicia Karenx 0.9");
 
+            //TODO: revisar el uso de Thread.CurrentThread.IsBackground = true; y de task async etc.
             Thread automaticProcess = new Thread(() =>
             {
                 do
                 {
-                    Thread.CurrentThread.IsBackground = true;
-                    GetFormatsFromSharedDirectory();/*1*/
-                                                    //GetPdfFromMailBox();
-                    CreateFoldersByEachFormat();/*1*/
-                    ExtractImagesFromFormats();/*1*/
-                                               //ImproveImagesFromPdf(); /*1*/
-                    GetApprovedFormats();/*1*/
 
-                    CreateFoldersByEachDisapprovedFormat();/*1*/
+                    ////config.AppSettings.SectionInformation.ForceSave = true;
+                    //ConfigurationManager.RefreshSection("appSettings");
+                    //System.Configuration.Configuration config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
+                    ////System.Configuration.Configuration config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
+                    //TODO: para que se pueda actualizar los valores.
+                    StopAuto = Convert.ToBoolean(ConfigurationManager.AppSettings["StopAuto"]);
+                    RestAuto = Convert.ToBoolean(ConfigurationManager.AppSettings["RestAuto"]);
+                    Sleep = Convert.ToInt32(ConfigurationManager.AppSettings["Sleep"]);
 
-                    //GetScrapsHeaderDataImages();
-                    GetScrapsDataImages(); /*1 - en teoría si llego hasta acá, todo estará bien aunque no necesarimente copiado al 100%*/
-                                           //GetScrapsDataImagesFull();
-                                           //GetHeaderDataFromScraps();
-                    GetDataFromScraps();/*1*/
-                                        //GetDataManualFromScraps();/*1*/
-                                        //GetDataFullFromRaw();/*1*/
-                    MoveFinalFormats(); /*1*/
-                    MoveFormatsNoProcess();/*1*/ //lvl 01
-                    MoveScrapsErrorProcess();/*1*/
-                    BackupScrapsCorrectProcess();/*1*/
+                    if (!RestAuto)
+                    {
+                        //Thread.CurrentThread.IsBackground = true;
+                        GetFormatsFromSharedDirectory();/*1*/
+                                                        //GetPdfFromMailBox();
+                        CreateFoldersByEachFormat();/*1*/
+                        ExtractImagesFromFormats();/*1*/
+                                                   //ImproveImagesFromPdf(); /*1*/
+                        GetApprovedFormats();/*1*/
 
-                    ApprovedFormats.Clear();
-                    DisapprovedFormats.Clear();
+                        CreateFoldersByEachDisapprovedFormat();/*1*/
+
+                        //GetScrapsHeaderDataImages();
+                        GetScrapsDataImages(); /*1 - en teoría si llego hasta acá, todo estará bien aunque no necesarimente copiado al 100%*/
+                                               //GetScrapsDataImagesFull();
+                                               //GetHeaderDataFromScraps();
+                        GetDataFromScraps();/*1*/
+                                            //GetDataManualFromScraps();/*1*/
+                                            //GetDataFullFromRaw();/*1*/
+                        MoveFinalFormats(); /*1*/
+                        MoveFormatsNoProcess();/*1*/ //lvl 01
+                        //MoveScrapsErrorProcess();
+                        BackupScrapsCorrectProcess();/*1*/
+
+                        ApprovedFormats.Clear();
+                        DisapprovedFormats.Clear();
+                    }
+                    else
+                    {
+                        Log("Descanso total de proceso automático... .");
+                        Thread.Sleep(Sleep);
+                    }
                 }
-                while (!Stop);
+                while (!StopAuto);
+
+                Log("Detengo proceso automático de forma normal");
             });
 
             Thread manualProcess = new Thread(() =>
             {
                 do
                 {
-                    Thread.CurrentThread.IsBackground = true;
-                    /* run your code here */
-                    GetDataManualFromScraps();
+                    StopManual = Convert.ToBoolean(ConfigurationManager.AppSettings["StopManual"]);
+                    RestManual = Convert.ToBoolean(ConfigurationManager.AppSettings["RestManual"]);
+                    Sleep = Convert.ToInt32(ConfigurationManager.AppSettings["Sleep"]);
+
+                    if (!RestManual)
+                    {
+                        //Thread.CurrentThread.IsBackground = true;
+                        /* run your code here */
+                        Log("Inicio atención de proceso manual");
+                        GetDataManualFromScraps();
+                        MoveManualFinalFormats();
+                        BackupManualScrapsCorrectProcess();
+                        Log("Termino atención de proceso manual");
+                        Log("Descanso por " + (Sleep / 1000) + " segundos");
+                        Thread.Sleep(Sleep);
+                    }
+                    else
+                    {
+                        Log("Descanso total de proceso manual... .");
+                        Thread.Sleep(Sleep);
+                    }
                 }
-                while (!Stop);
+                while (!StopManual);
+
+                Log("Detengo proceso manual de forma normal");
             });
 
-            automaticProcess.Start();
+            //automaticProcess.Start();
             manualProcess.Start();
 
-            Log("Termina Karenx 0.9");
+            Log("Rutina de inicialización Karenx 0.9 completada");
         }
 
         private void CreateFoldersByEachDisapprovedFormat()
@@ -168,20 +219,61 @@ namespace To.Rpa.AppCTS.BL
 
         private void MoveFinalFormats()
         {
-            foreach (BECTSFormat format in ApprovedFormats)
+            Log("#7| Inicia rutina #7");
+            try
             {
-                //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
-                DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString(), "PLANTILLA"));
-
-                FileInfo[] files = finalFormat.GetFiles("*.xls*");
-
-                foreach (FileInfo file in files)
+                foreach (BECTSFormat format in ApprovedFormats)
                 {
-                    //File.Move(file.FullName, FinalFormatDirectory + file.Name);
-                    //TODO:cambiar por move más length...
-                    File.Copy(file.FullName, FinalFormatDirectory + file.Name, true);
+                    //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
+                    DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString(), "PLANTILLA"));
+
+                    FileInfo[] files = finalFormat.GetFiles("*.xls*");
+
+
+                    foreach (FileInfo file in files)
+                    {
+                        //File.Move(file.FullName, FinalFormatDirectory + file.Name);
+                        //TODO:cambiar por move más length...
+                        File.Copy(file.FullName, FinalFormatDirectory + file.Name, true);
+                    }
                 }
+
+
             }
+            catch (Exception exc)
+            {
+                Log("#7| " + exc.ToString());
+            }
+            Log("#7| Termina rutina #7");
+        }
+
+        private void MoveManualFinalFormats()
+        {
+            Log("#x| Inicia rutina #7");
+            try
+            {
+                foreach (BECTSFormat format in DisapprovedFormats)
+                {
+                    //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
+                    DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ManualScrapsDirectory, format.FormatCode.ToString(), "PLANTILLA"));
+
+                    FileInfo[] files = finalFormat.GetFiles("*.xls*");
+
+                    foreach (FileInfo file in files)
+                    {
+                        //File.Move(file.FullName, FinalFormatDirectory + file.Name);
+                        //TODO:cambiar por move más length...
+                        File.Copy(file.FullName, FinalFormatDirectory + file.Name, true);
+                    }
+                }
+
+
+            }
+            catch (Exception exc)
+            {
+                Log("#x| " + exc.ToString());
+            }
+            Log("#x| Termina rutina");
         }
 
         private void GetDataFullFromRaw()
@@ -283,8 +375,11 @@ namespace To.Rpa.AppCTS.BL
 
             for (int i = 0; i < totalFiles; i++)
             {
-                File.Move(OriginDirectory + files[i].Name,
-                    WrongPdfsDirectory + files[i].Name);
+                if (!File.Exists(WrongPdfsDirectory + files[i].Name))
+                {
+                    File.Move(OriginDirectory + files[i].Name,
+                        WrongPdfsDirectory + files[i].Name);
+                }
             }
         }
 
@@ -298,10 +393,46 @@ namespace To.Rpa.AppCTS.BL
 
         private void BackupScrapsCorrectProcess()
         {
-            foreach (BECTSFormat format in ApprovedFormats)
+            Log("#8| Inicia rutina");
+            try
             {
-
+                foreach (BECTSFormat format in ApprovedFormats)
+                {
+                    if (format.Done)
+                    {
+                        //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
+                        DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()));
+                        finalFormat.MoveTo(BackupDirectory + format.FormatCode.ToString());
+                    }
+                }
             }
+            catch (Exception exc)
+            {
+                Log("#8| ERROR: " + exc.ToString());
+            }
+            Log("#8| Termina rutina");
+        }
+
+        private void BackupManualScrapsCorrectProcess()
+        {
+            Log("#x2| Inicia rutina");
+            try
+            {
+                foreach (BECTSFormat format in DisapprovedFormats)
+                {
+                    if (format.Done)
+                    {
+                        //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
+                        DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ManualScrapsDirectory, format.FormatCode.ToString() + "_MANUAL"));
+                        finalFormat.MoveTo(BackupDirectory + format.FormatCode.ToString());
+                    }
+                }
+            }
+            catch (Exception exc)
+            {
+                Log("#x2| ERROR: " + exc.ToString());
+            }
+            Log("#x2| Termina rutina");
         }
 
         private void MoveBackupAll()
@@ -403,7 +534,7 @@ namespace To.Rpa.AppCTS.BL
 
                     string imagePath = directories[i].FullName + @"\ORIGINAL\base_" + format + "_" + "{0}.png";
 
-                    PdfToPng(diChildScraps.GetFiles("*.pdf")[0].FullName, imagePath, i, XDpi, YDpi);
+                    PdfToPng(diChildScraps.GetFiles("*.pdf")[0].FullName, imagePath, 0, XDpi, YDpi);
                 }
             }
             catch (Exception exc)
@@ -540,6 +671,11 @@ namespace To.Rpa.AppCTS.BL
                     di = new DirectoryInfo(directoryFullName + @"\ORIGINAL\");
                     FileInfo[] files = di.GetFiles("base_" + directoryName + "*");
 
+                    if (directoryName == "4038")
+                    {
+
+                    }
+
                     for (int o = 0; o < files.Length; o++)
                     {
                         UInt16 attempts = 0;
@@ -571,7 +707,7 @@ namespace To.Rpa.AppCTS.BL
                                 }
                                 else
                                 {
-                                    newImage = Methods.cropAtRect(image, new Rectangle(3140, 20, 700, image.Height - 20));
+                                    newImage = Methods.cropAtRect(image, new Rectangle(1570, 20, 350, image.Height - 20));
                                 }
                                 fileName = files[o].DirectoryName.Replace(@"\ORIGINAL", "") + @"\" + Path.GetFileNameWithoutExtension(files[o].Name) + "_4" + Path.GetExtension(files[0].Name);
 
@@ -1026,78 +1162,113 @@ namespace To.Rpa.AppCTS.BL
                     File.Copy(TemplatesDirectory + "Plantilla abono CTS.xlsx", filename, true);
 
                     directories[i].MoveTo(directories[i].FullName.Replace("_OK", "_PROCESANDO"));
+                    //AL CAMBIAR A PROCESANDO, ACTUALIZAR FILENAME
+                    filename = directories[i].FullName + @"\PLANTILLA\" + "Plantilla abono CTS" + " - " + formatCode + ".xlsx";
+
 
                     uint actualRow = 0;
+                    /*uint nextTemp = 0;
+                    uint next = 0;*/
 
                     List<BECTSFormatDetail> lst = new List<BECTSFormatDetail>();
-                    List<string> dataCol = GetData(Path.Combine(directories[i].FullName, "NombresYApellidos.png"));
-                    if (dataCol != null)
+                    List<string> dataCol = null;
+                    FileInfo[] files = directories[i].GetFiles("NroDoc*.png");
+                    for (int o = 0; o < files.Length; o++)
                     {
-                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
-                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "NombresYApellidos");
-                    }
-
-                    dataCol = GetData(Path.Combine(directories[i].FullName, "TipDoc.png"));
-                    if (dataCol != null)
-                    {
-                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
-                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "TipDoc");
-                    }
-
-                    dataCol = GetData(Path.Combine(directories[i].FullName, "NroDoc.png"));
-                    if (dataCol != null)
-                    {
+                        //actualRow += next;
+                        dataCol = GetData(files[o].FullName);
                         dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
                         SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "NroDoc");
+                        actualRow += 2;
                     }
-
-                    dataCol = GetData(Path.Combine(directories[i].FullName, "NroCta.png"));
-                    if (dataCol != null)
-                    {
-                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
-                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "NroCta");
-                    }
-
-                    dataCol = GetData(Path.Combine(directories[i].FullName, "CtaMoneda.png"));
-                    if (dataCol != null)
-                    {
-                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
-                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "CtaMoneda");
-                    }
-
-                    dataCol = GetData(Path.Combine(directories[i].FullName, "AbonoMonto.png"));
-                    if (dataCol != null)
-                    {
-                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
-                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "AbonoMonto");
-                    }
-
-                    dataCol = GetData(Path.Combine(directories[i].FullName, "AbonoMoneda.png"));
-                    if (dataCol != null)
-                    {
-                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
-                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "AbonoMoneda");
-                    }
-
-                    dataCol = GetData(Path.Combine(directories[i].FullName, "RemuMonto.png"));
-                    if (dataCol != null)
-                    {
-                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
-                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "RemuMonto");
-                    }
-
-                    dataCol = GetData(Path.Combine(directories[i].FullName, "RemuMoneda.png"));
-                    if (dataCol != null)
-                    {
-                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
-                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "RemuMoneda");
-                    }
-                    //dataCol = GetData(directories[i].FullName + "NRODOC");
-                    //SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, directories[i].Name, "NroDoc");
-
-
+                    //nextTemp = actualRow;
                     actualRow = 0;
 
+                    files = directories[i].GetFiles("NombresYApellidos*.png");
+                    for (int o = 0; o < files.Length; o++)
+                    {
+                        //actualRow += next;
+                        dataCol = GetData(files[o].FullName);
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "NombresYApellidos");
+                        actualRow += 2;
+                    }
+                    actualRow = 0;
+
+                    files = directories[i].GetFiles("TipDoc*.png");
+                    for (int o = 0; o < files.Length; o++)
+                    {
+                        //actualRow += next;
+                        dataCol = GetData(files[o].FullName);
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "TipDoc");
+                        actualRow += 2;
+                    }
+                    actualRow = 0;
+
+                    files = directories[i].GetFiles("NroCta*.png");
+                    for (int o = 0; o < files.Length; o++)
+                    {
+                        dataCol = GetData(files[o].FullName);
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "NroCta");
+                        actualRow += 2;
+                    }
+                    actualRow = 0;
+
+                    files = directories[i].GetFiles("CtaMoneda*.png");
+                    for (int o = 0; o < files.Length; o++)
+                    {
+                        dataCol = GetData(files[o].FullName);
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "CtaMoneda");
+                        actualRow += 2;
+                    }
+                    actualRow = 0;
+
+                    files = directories[i].GetFiles("AbonoMonto*.png");
+                    for (int o = 0; o < files.Length; o++)
+                    {
+                        dataCol = GetData(files[o].FullName);
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "AbonoMonto");
+                        actualRow += 2;
+                    }
+                    actualRow = 0;
+
+                    files = directories[i].GetFiles("AbonoMoneda*.png");
+                    for (int o = 0; o < files.Length; o++)
+                    {
+                        dataCol = GetData(files[o].FullName);
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "AbonoMoneda");
+                        actualRow += 2;
+                    }
+                    actualRow = 0;
+
+                    files = directories[i].GetFiles("RemuMonto*.png");
+                    for (int o = 0; o < files.Length; o++)
+                    {
+                        dataCol = GetData(files[o].FullName);
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "RemuMonto");
+                        actualRow += 2;
+                    }
+                    actualRow = 0;
+
+                    files = directories[i].GetFiles("RemuMoneda*.png");
+                    for (int o = 0; o < files.Length; o++)
+                    {
+                        dataCol = GetData(files[o].FullName);
+                        dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "RemuMoneda");
+                        actualRow += 2;
+                    }
+                    actualRow = 0;
+                    //next = nextTemp;
+                    directories[i].MoveTo(directories[i].FullName.Replace("_PROCESANDO", "_MANUAL"));
+
+                    DisapprovedFormats.Find(x => x.FormatCode.ToString().Equals(formatCode)).Done = true;
                 }
             }
             catch (Exception exc)
@@ -1158,6 +1329,8 @@ namespace To.Rpa.AppCTS.BL
                         }
                     }
                 }
+
+                formats.Done = true;
             }
             Log("#6| Termina rutina #6 ");
         }
@@ -1707,7 +1880,7 @@ namespace To.Rpa.AppCTS.BL
         private bool ValidateIDOnPremise(string scrapIDPath)
         {
             List<string> lstIDs = GetData(scrapIDPath);
-
+            lstIDs = lstIDs.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
             if (lstIDs.Count > 0)
             {
                 //TODO: meter el minimunAccepted en appconfig

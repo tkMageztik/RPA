@@ -12,6 +12,7 @@ namespace To.Rpa.AppCTS.BE
         public int Pages { get; set; }
         public List<BECTSImagePage> LstBECTSImagePages { get; set; }
         public List<BECTSFormatDetail> LstBECTSFormatDetail { get; set; }
+        public bool Done { get; set; } = false;
 
         public BECTSFormat()
         {
