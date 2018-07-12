@@ -42,9 +42,16 @@
       <HintPath>..\packages\DocumentFormat.OpenXml.2.7.2\lib\net40\DocumentFormat.OpenXml.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="EPPlus, Version=4.5.2.1, Culture=neutral, PublicKeyToken=ea159fdaa78159a1, processorArchitecture=MSIL">
+      <HintPath>..\packages\EPPlus.4.5.2.1\lib\net40\EPPlus.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="PresentationCore" />
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Security" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -89,13 +96,13 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\To.AtNinjas.Util\To.AtNinjas.Util.csproj">
+      <Project>{2a212151-8859-4f18-bf83-f974ced030ae}</Project>
+      <Name>To.AtNinjas.Util</Name>
+    </ProjectReference>
     <ProjectReference Include="..\To.Rpa.EHLLAPI\To.Rpa.EHLLAPI.csproj">
       <Project>{CB8124C7-C7F9-469C-B417-B1243439FEDD}</Project>
       <Name>To.Rpa.EHLLAPI</Name>
-    </ProjectReference>
-    <ProjectReference Include="..\To.Rpa.Util\To.Rpa.Util.csproj">
-      <Project>{2a212151-8859-4f18-bf83-f974ced030ae}</Project>
-      <Name>To.Rpa.Util</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>

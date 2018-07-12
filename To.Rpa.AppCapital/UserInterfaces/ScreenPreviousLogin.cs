@@ -31,7 +31,7 @@ namespace To.Rpa.AppCapital.Interfaces
             Process[] p = Process.GetProcessesByName("pcsws");
             //p[0].WaitForInputIdle();
 
-            Thread.Sleep(2000);
+            Thread.Sleep(3000);
 
             AutomationElement _0 = AutomationElement.FromHandle(p[0].MainWindowHandle);
 
@@ -39,13 +39,13 @@ namespace To.Rpa.AppCapital.Interfaces
             //WinFormAdapter.SetText(_0_Descendants_1[1], "BFPJUARUI");
 
             ValuePattern etb = _0_Descendants_1[1].GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
-            etb.SetValue("BFPFELQUI");
+            etb.SetValue("BFPROBOP2");
 
             AutomationElementCollection _0_Descendants_2 = _0.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Contraseña:"));
             //WinFormAdapter.SetText(_0_Descendants_2[1], "BFPJUARUI2");
 
             ValuePattern etb2 = _0_Descendants_2[1].GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
-            etb2.SetValue("BFPFELQUI4");
+            etb2.SetValue("BFPROBOP6");
 
             //WinFormAdapter.ClickElement(WinFormAdapter.GetAEOnDescByName(_0, "Aceptar"));
             AutomationElementCollection _0_Descendants_3 = _0.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Aceptar"));

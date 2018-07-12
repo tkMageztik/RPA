@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using To.Rpa.AppCapital.Interfaces;
 using To.Rpa.AppCapital.UserInterfaces;
-using To.Rpa.Util;
+using To.AtNinjas.Util;
 
 namespace To.Rpa.AppCapital.BL
 {

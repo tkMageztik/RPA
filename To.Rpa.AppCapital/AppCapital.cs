@@ -8,7 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Automation;
 using To.Rpa.AppCapital.BL;
-using To.Rpa.Util;
+using To.AtNinjas.Util;
 
 namespace To.Rpa.AppCapital
 {
@@ -36,7 +36,7 @@ namespace To.Rpa.AppCapital
 
                     //TODO: La configuración puede estar a nivel de la torre de control
                     Methods.LogProceso("Se inicia proceso de AppCapital: " + fvi.ProductName + " -> " + MethodBase.GetCurrentMethod().Name);
-
+                    Methods.Sleep();
                     Process px = Process.Start(MFEmulatorPath);
                     processID = px.Id;
 

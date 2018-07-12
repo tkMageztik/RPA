@@ -6,7 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using To.Rpa.Util;
+using To.AtNinjas.Util;
 using To.Rpa.AppCTS.BL;
 
 namespace To.Rpa.AppCTS
@@ -22,8 +22,6 @@ namespace To.Rpa.AppCTS
             {
                 try
                 {
-
-
                     Assembly assembly = Assembly.GetExecutingAssembly();
                     FileVersionInfo fvi = FileVersionInfo.GetVersionInfo(assembly.Location);
 

@@ -12,6 +12,8 @@ using System.Threading.Tasks;
 using S = DocumentFormat.OpenXml.Spreadsheet.Sheets;
 using E = DocumentFormat.OpenXml.OpenXmlElement;
 using A = DocumentFormat.OpenXml.OpenXmlAttribute;
+using OfficeOpenXml;
+using System.IO;
 
 namespace To.Rpa.AppCapital.UserInterfaces
 {
@@ -40,7 +42,7 @@ namespace To.Rpa.AppCapital.UserInterfaces
             //TODO: Depende de que la sesión "A" esté libre
 
             var iConnection = EhllapiWrapper.Connect("A").ToString();
-            
+
             Debug.WriteLine("Valor de conexión: " + iConnection);
 
             string lectura = null;
@@ -52,7 +54,7 @@ namespace To.Rpa.AppCapital.UserInterfaces
                 EhllapiWrapper.SendStr("BFPROBOP2");
 
                 EhllapiWrapper.SetCursorPos(533);
-                EhllapiWrapper.SendStr("BFPROBOP5");
+                EhllapiWrapper.SendStr("BFPROBOP6");
 
                 EhllapiWrapper.SendStr("@E");
 
@@ -76,97 +78,235 @@ namespace To.Rpa.AppCapital.UserInterfaces
                 EhllapiWrapper.SendStr("2");
                 EhllapiWrapper.SendStr("@E");
 
-
-                string montoAbonado = null;
-                string row1Col0 = "";
-                string row1Col1 = "";
-                string row1Col2 = "";
-                string row1Col3 = "";
-                string row1Col4 = "";
-                string row1Col5 = "";
+                //TODO: BORRAR
+                //TODO: mover capital... .
+                //string capital = "";
+                //TODO: BORRAR
 
                 //GetSheetInfo(@"D:\COMPARTIDO_PUBLICO\RPA\TCS RPA V1.2 - Training\Sample\RPA\Main\To.Rpa.AppCapital\bin\Debug\DATA_PROCESO.xlsx");
 
                 //string t = GetCellValue(@"D:\COMPARTIDO_PUBLICO\RPA\TCS RPA V1.2 - Training\Sample\RPA\Main\To.Rpa.AppCapital\bin\Debug\DATA_PROCESO.xlsx",
                 //    "DATA","A2");
 
+                FileInfo existingFile = new FileInfo(@"d:\Users\juarui\Source\Repos\RPA\To.Rpa.AppCapital\DATA_PROCESO.xlsx");
 
-                // Open the spreadsheet document for read-only access.
-                using (SpreadsheetDocument document =
-                    SpreadsheetDocument.Open(@"D:\COMPARTIDO_PUBLICO\RPA\TCS RPA V1.2 - Training\Sample\RPA\Main\To.Rpa.AppCapital\bin\Debug\DATA_PROCESO.xlsx", false))
+                using (ExcelPackage package = new ExcelPackage(existingFile))
                 {
-                    row1Col0 = GetCellValue(document, "DATA", "A2");
-                    row1Col1 = GetCellValue(document, "DATA", "B2");
-                    row1Col2 = GetCellValue(document, "DATA", "C2");
-                    row1Col3 = GetCellValue(document, "DATA", "D2");
-                    row1Col4 = GetCellValue(document, "DATA", "E2");
-                    row1Col5 = GetCellValue(document, "DATA", "F2");
-                    //row1Col5 = "2908070001210000";//dr[5].ToString();
+                    ExcelWorksheet worksheet = package.Workbook.Worksheets[1];
 
+                    int row = 2;
+                    //TODO: aqui mover capital... .
+                    string prestamo = "", banco, agencia, moneda, ctaTramite, cta, estado, capital, error;
+                    decimal monto;
 
-                    EhllapiWrapper.SetCursorPos(1167);
-                    EhllapiWrapper.SendStr(row1Col0);
-                    EhllapiWrapper.SetCursorPos(1327);
-                    EhllapiWrapper.SendStr("9999");
-                    EhllapiWrapper.SendStr("@2");
-
-
-                    EhllapiWrapper.SetCursorPos(244);
-                    EhllapiWrapper.ReadScreen(244, 14, out montoAbonado);
-
-                    Thread.Sleep(tiempo);
-
-                    if (montoAbonado != null)
+                    do
                     {
-                        Thread.Sleep(tiempo);
+                        try
+                        {
+                            estado = worksheet.Cells[row, 8].Value.ToString();
+
+                            if (estado.Equals("ERROR"))
+                            {
+                                continue;
+                            }
+
+                            prestamo = worksheet.Cells[row, 1].Value.ToString();
+                            monto = Convert.ToDecimal(worksheet.Cells[row, 2].Value);
+                            ctaTramite = worksheet.Cells[row, 6].Value == null ? "" : worksheet.Cells[row, 6].Value.ToString();
+                            cta = worksheet.Cells[row, 7].Value == null ? "" : worksheet.Cells[row, 7].Value.ToString();
+
+                            EhllapiWrapper.SetCursorPos(1167);
+                            EhllapiWrapper.SendStr(prestamo);
+                            EhllapiWrapper.SetCursorPos(1327);
+                            EhllapiWrapper.SendStr("9999");
+                            EhllapiWrapper.SendStr("@2");
+
+                            EhllapiWrapper.SetCursorPos(244);
+                            EhllapiWrapper.ReadScreen(244, 14, out capital);
+                            capital = capital.Substring(0, 14);
+                            //Convert.to strMonto
+                            Thread.Sleep(tiempo);
+
+                            //TODO: para que sirve esta validación?
+                            if (capital != null)
+                            {
+                                Thread.Sleep(tiempo);
+
+                                //TODO: validar en el excel que solo se puede ingresar un campo a la vez.
+                                if (!ctaTramite.Equals(""))
+                                {
+                                    banco = worksheet.Cells[row, 3].Value.ToString();
+                                    agencia = worksheet.Cells[row, 4].Value.ToString();
+                                    moneda = worksheet.Cells[row, 5].Value.ToString();
+
+                                    EhllapiWrapper.SetCursorPos(575);
+                                    EhllapiWrapper.SendStr(monto.ToString());
+                                    EhllapiWrapper.SendStr("@A@+");
+                                    EhllapiWrapper.SendStr("@T");
+
+                                    EhllapiWrapper.SetCursorPos(592);
+                                    EhllapiWrapper.SendStr(banco);
+
+                                    EhllapiWrapper.SetCursorPos(595);
+                                    EhllapiWrapper.SendStr(agencia);
+
+                                    EhllapiWrapper.SetCursorPos(599);
+                                    EhllapiWrapper.SendStr(moneda);
+
+                                    EhllapiWrapper.SetCursorPos(603);
+                                    EhllapiWrapper.SendStr(ctaTramite);
+
+                                }
+                                else
+                                {
+                                    //TODO: CUENTA
+                                }
+
+                                
+
+                                EhllapiWrapper.SetCursorPos(1682);
+                                EhllapiWrapper.SendStr(prestamo + " / APLIC CAP");
+                                EhllapiWrapper.SendStr("@b");
+                                EhllapiWrapper.ReadScreen(244, 14, out error);
+
+                                if (error == "mensaje de error")
+                                {
+                                    EhllapiWrapper.SendStr("@E");
+                                    if ("" == "existen deducciones")
+                                    {
+                                        //TODO: UBICAR BIEN DEDUCCIONES
+                                        EhllapiWrapper.SetCursorPos(1455);
+                                        EhllapiWrapper.SendStr("@c");
+                                    }
+                                }
+
+                                //TODO: CAPITAL
+                                //MetodoRecursivo(monto);
 
 
-                        EhllapiWrapper.SetCursorPos(575);
-                        EhllapiWrapper.SendStr(row1Col1);
-                        EhllapiWrapper.SendStr("@A@+");
-                        EhllapiWrapper.SendStr("@T");
+                                EhllapiWrapper.SetCursorPos(899);
+                                EhllapiWrapper.SendStr(".");
+                                EhllapiWrapper.SendStr("@3");
 
-                        //                    Thread.Sleep(tiempo);
-                        //                    //MainFrameAdapter.SetTextOnScreen(7, 25, row1Col1);
-                        //                    ////MainFrameAdapter.SendKey(PcomKeys.FieldPlus);
-                        //                    ////MainFrameAdapter.SendKey(PcomKeys.Tab);                             
-                        //                    //MainFrameAdapter.SetTextOnScreen(7, 32, row1Col2);
-                        //                    ////MainFrameAdapter.SendKey(PcomKeys.Tab);
-                        //                    //MainFrameAdapter.SetTextOnScreen(7, 35, row1Col3);
-                        //                    ////MainFrameAdapter.SendKey(PcomKeys.Tab);
-                        //                    //MainFrameAdapter.SetTextOnScreen(7, 39, row1Col4);
-                        //                    ////MainFrameAdapter.SendKey(PcomKeys.Tab);
-                        //                    //MainFrameAdapter.SetTextOnScreen(7, 43, row1Col5);
-                        //                    ////MainFrameAdapter.SendKey(PcomKeys.Tab);
-                        //                    ////MainFrameAdapter.SetTextOnScreen(22, 2, row1Col0 + " / APLIC CAP  _" + cont.ToString());
-                        //                    //MainFrameAdapter.SetTextOnScreen(22, 2, row1Col0 + " / APLIC CAP");
-                        //                    //MainFrameAdapter.SendKey(PcomKeys.PF11);
-                        //                    //Thread.Sleep(tiempo);
-                        //                    //MainFrameAdapter.SetTextOnScreen(12, 19, ".");
-                        //                    //MainFrameAdapter.SendKey(PcomKeys.PF3);
+#if DEBUG
+                                EhllapiWrapper.SendStr("@3");
+#endif
 
+                                //PARA PASAR A OTRA OPERACIÓN
+                                //EhllapiWrapper.SendStr("@7");
+                                //EhllapiWrapper.SetCursorPos(1687);
+                                //EhllapiWrapper.SendStr("2");
+                                //EhllapiWrapper.SendStr("@E");
+                                prestamo = worksheet.Cells[row + 1, 1].Value.ToString();
 
-                        //                    //string newColumn = "H";
-                        //                    //string newRow = "5";
-                        //                    //string worksheet2 = "DATA";
+                            }
+                        }
+                        catch (Exception exc)
+                        {
+                            //TODO: guardar log.
+                            worksheet.SetValue(row, 8, "ERROR");
+                        }
+                        finally { row++; }
 
-                        //                    ////string sql2 = String.Format("UPDATE [{0}$] SET {1}{2}={3}", worksheet2, newColumn, newRow, "Hola");
-                        //                    //string commandString = String.Format("UPDATE [{0}${1}{2}:{1}{2}] SET F1='{3}'", worksheet2, newColumn, newRow, 1);
-                        //                    //OleDbCommand objCmdSelect = new OleDbCommand(commandString, connection);
-                        //                    //objCmdSelect.ExecuteNonQuery();
-
-
-
-                        //                    //COMANDOS PARA EL SIGUIENTE REGISTRO
-                        //                    //MainFrameAdapter.SendKey(PcomKeys.PF7);
-                        //                    //MainFrameAdapter.SetTextOnScreen(22, 7, "2");
-                        //                    //MainFrameAdapter.SendKey(PcomKeys.Enter);
-                    }
-
-
+                    } while (!prestamo.Equals(""));
                 }
 
+                //// Open the spreadsheet document for read-only access.
+                //using (SpreadsheetDocument document =
+                //SpreadsheetDocument.Open(@"d:\Users\juarui\Source\Repos\RPA\To.Rpa.AppCapital\DATA_PROCESO.xlsx", false))
+                //{
+                //    row1Col0 = GetCellValue(document, "DATA", "A2");
+                //    row1Col1 = GetCellValue(document, "DATA", "B2");
+                //    row1Col2 = GetCellValue(document, "DATA", "C2");
+                //    row1Col3 = GetCellValue(document, "DATA", "D2");
+                //    row1Col4 = GetCellValue(document, "DATA", "E2");
+                //    row1Col5 = GetCellValue(document, "DATA", "F2");
+                //    //row1Col5 = "2908070001210000";//dr[5].ToString();
+
+
+                //    EhllapiWrapper.SetCursorPos(1167);
+                //    EhllapiWrapper.SendStr(row1Col0);
+                //    EhllapiWrapper.SetCursorPos(1327);
+                //    EhllapiWrapper.SendStr("9999");
+                //    EhllapiWrapper.SendStr("@2");
+
+                //    EhllapiWrapper.SetCursorPos(244);
+                //    EhllapiWrapper.ReadScreen(244, 14, out capital);
+
+                //    Thread.Sleep(tiempo);
+
+                //    if (capital != null)
+                //    {
+                //        Thread.Sleep(tiempo);
+
+                //        EhllapiWrapper.SetCursorPos(575);
+                //        EhllapiWrapper.SendStr(row1Col1);
+                //        EhllapiWrapper.SendStr("@A@+");
+                //        EhllapiWrapper.SendStr("@T");
+
+                //        EhllapiWrapper.SetCursorPos(592);
+                //        EhllapiWrapper.SendStr(row1Col2);
+
+                //        EhllapiWrapper.SetCursorPos(595);
+                //        EhllapiWrapper.SendStr(row1Col3);
+
+                //        EhllapiWrapper.SetCursorPos(599);
+                //        EhllapiWrapper.SendStr(row1Col4);
+
+                //        EhllapiWrapper.SetCursorPos(603);
+                //        EhllapiWrapper.SendStr(row1Col5);
+
+                //        EhllapiWrapper.SetCursorPos(1682);
+                //        //TODO:CONTADOR
+                //        EhllapiWrapper.SendStr(row1Col0 + " / APLIC CAP  _" /*+ cont.ToString()*/);
+                //        EhllapiWrapper.SendStr("@b");
+                //        Thread.Sleep(tiempo);
+
+                //        EhllapiWrapper.SetCursorPos(899);
+                //        EhllapiWrapper.SendStr(".");
+                //        EhllapiWrapper.SendStr("@3");
+
+                //        //TODO: FALTA CONFIRMAR LA SALIDA CON F3 y el popup que sale... 
+
+
+                //        //                    //string newColumn = "H";
+                //        //                    //string newRow = "5";
+                //        //                    //string worksheet2 = "DATA";
+
+                //        //                    ////string sql2 = String.Format("UPDATE [{0}$] SET {1}{2}={3}", worksheet2, newColumn, newRow, "Hola");
+                //        //                    //string commandString = String.Format("UPDATE [{0}${1}{2}:{1}{2}] SET F1='{3}'", worksheet2, newColumn, newRow, 1);
+                //        //                    //OleDbCommand objCmdSelect = new OleDbCommand(commandString, connection);
+                //        //                    //objCmdSelect.ExecuteNonQuery();
+
+
+
+                //        //                    //COMANDOS PARA EL SIGUIENTE REGISTRO
+                //        //                    //MainFrameAdapter.SendKey(PcomKeys.PF7);
+                //        //                    //MainFrameAdapter.SetTextOnScreen(22, 7, "2");
+                //        //                    //MainFrameAdapter.SendKey(PcomKeys.Enter);
+
+                //        //PARA PASAR A OTRA OPERACIÓN
+                //        EhllapiWrapper.SendStr("@7");
+                //        EhllapiWrapper.SetCursorPos(1687);
+                //        EhllapiWrapper.SendStr("2");
+                //        EhllapiWrapper.SendStr("@E");
+                //    }
+
+
+                //}
+
             }
+        }
+
+        public void MetodoRecursivo(decimal monto)
+        {
+            decimal temp = 0;
+            do
+            {
+                decimal interes = (monto - 0.01M) - 0;
+                temp = interes;
+
+            } while (0 < temp);
         }
 
         public static void GetSheetInfo(string fileName)

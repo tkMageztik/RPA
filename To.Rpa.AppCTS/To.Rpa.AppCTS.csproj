@@ -47,9 +47,16 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
+  <PropertyGroup>
+    <StartupObject />
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="DocumentFormat.OpenXml, Version=2.8.1.0, Culture=neutral, PublicKeyToken=8fb06cb64d019a17, processorArchitecture=MSIL">
       <HintPath>..\packages\DocumentFormat.OpenXml.2.8.1\lib\net40\DocumentFormat.OpenXml.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="EPPlus, Version=4.5.2.1, Culture=neutral, PublicKeyToken=ea159fdaa78159a1, processorArchitecture=MSIL">
+      <HintPath>..\packages\EPPlus.4.5.2.1\lib\net40\EPPlus.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="Ghostscript.NET, Version=1.2.1.0, Culture=neutral, PublicKeyToken=f85051de34525b59, processorArchitecture=MSIL">
@@ -64,12 +71,15 @@
       <HintPath>..\packages\NHunspell.1.2.5554.16953\lib\net\NHunspell.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="PresentationCore" />
     <Reference Include="System" />
     <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Security" />
     <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
@@ -88,6 +98,11 @@
     <Compile Include="BL\BLMain.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Properties\Resources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resources.resx</DependentUpon>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config">
@@ -179,9 +194,17 @@
     <None Include="packages.config" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\To.Rpa.Util\To.Rpa.Util.csproj">
-      <Project>{2A212151-8859-4F18-BF83-F974CED030AE}</Project>
-      <Name>To.Rpa.Util</Name>
+    <ProjectReference Include="..\To.AtNinjas.Karen\To.AtNinjas.Karen.csproj">
+      <Project>{c8d208da-698d-4298-83ad-6ca37c95cb70}</Project>
+      <Name>To.AtNinjas.Karen</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\To.AtNinjas.Util\To.AtNinjas.Util.csproj">
+      <Project>{2a212151-8859-4f18-bf83-f974ced030ae}</Project>
+      <Name>To.AtNinjas.Util</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\To.Rpa.AppCTSSA\To.Rpa.AppCTSSA.csproj">
+      <Project>{1AB36678-7963-4604-ADE0-8078FCEB0D5E}</Project>
+      <Name>To.Rpa.AppCTSSA</Name>
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
@@ -225,6 +248,12 @@
     <None Include="x86\libtesseract304.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Properties\Resources.resx">
+      <Generator>ResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

@@ -313,8 +313,9 @@ namespace EHLLAPI
 			UInt32 f=HA_COPY_PS_TO_STR;
 			UInt32 l=(UInt32)len;
 			UInt32 r = EhllapiFunc.hllapi(out f, Data, out l, out rc);
-			txt=Data.ToString();
-			return r;
+			//txt=Data.ToString();
+            txt = Data.ToString().Substring(0, len);
+            return r;
 		}
 
 		public static UInt32 Wait()

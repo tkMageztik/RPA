@@ -8,7 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Automation;
 using To.Rpa.AppCapital.BL;
-using To.Rpa.Util;
+using To.AtNinjas.Util;
 
 namespace To.Rpa.AppCapital
 {

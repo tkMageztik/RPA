@@ -6,20 +6,25 @@ using Ghostscript.NET.Rasterizer;
 using IBM.Data.DB2.iSeries;
 using NHunspell;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Tesseract;
 using To.Rpa.AppCTS.BE;
-using To.Rpa.Util;
+using To.AtNinjas.Util;
 using A = DocumentFormat.OpenXml.OpenXmlAttribute;
 using E = DocumentFormat.OpenXml.OpenXmlElement;
 using S = DocumentFormat.OpenXml.Spreadsheet.Sheets;
+using To.AtNinjas.Karen;
+using OfficeOpenXml;
 
 namespace To.Rpa.AppCTS.BL
 {
@@ -34,6 +39,7 @@ namespace To.Rpa.AppCTS.BL
         private string FinalFormatDirectory { get; set; }
         private string GSDllDirectory { get; set; }
         private string BackupDirectory { get; set; }
+        private string ConfigFile { get; set; }
 
         private List<BECTSFormat> ApprovedFormats { get; set; }
         private List<BECTSFormat> DisapprovedFormats { get; set; }
@@ -56,6 +62,7 @@ namespace To.Rpa.AppCTS.BL
         private bool StopManual { get; set; }
         private bool RestManual { get; set; }
         private int Sleep { get; set; }
+        private int SleepHour { get; set; }
 
         public BLMain()
         {
@@ -77,74 +84,134 @@ namespace To.Rpa.AppCTS.BL
             Attempts = Convert.ToUInt16(ConfigurationManager.AppSettings["Attempts"]);
             GSDllDirectory = ConfigurationManager.AppSettings["GSDllDirectory"];
             BackupDirectory = ConfigurationManager.AppSettings["BackupDirectory"];
-
-            StopAuto = Convert.ToBoolean(ConfigurationManager.AppSettings["StopAuto"]);
-            RestAuto = Convert.ToBoolean(ConfigurationManager.AppSettings["RestAuto"]);
-            StopManual = Convert.ToBoolean(ConfigurationManager.AppSettings["StopManual"]);
-            RestManual = Convert.ToBoolean(ConfigurationManager.AppSettings["RestManual"]);
-            Sleep = Convert.ToInt32(ConfigurationManager.AppSettings["Sleep"]);
-
+            ConfigFile = ConfigurationManager.AppSettings["ConfigFile"];
             //TODO, no debería ser lazy load... .
             //ApprovedFormatsByName = new List<string>();
             ApprovedFormats = new List<BECTSFormat>();
             DisapprovedFormats = new List<BECTSFormat>();
             Col2ImagesPagesTemp = new List<BECTSImagePage>();
 
+            Init();
+        }
+
+        private void Init()
+        {
+            InitAuto();
+            InitManual();
+        }
+
+        private void InitAuto()
+        {
+            try
+            {
+                StopAuto = Convert.ToBoolean(GetConfigLine(1));
+                RestAuto = Convert.ToBoolean(GetConfigLine(2));
+            }
+            catch
+            {
+                Log("Hay un error en el archivo de configuración... configuración Auto");
+                Thread.Sleep(10000);
+            }
+        }
+
+        private void RepairUserWorkspace()
+        {
+            DirectoryInfo diShared = new DirectoryInfo(OriginSharedDirectory);
+            DirectoryInfo diFinal = new DirectoryInfo(FinalFormatDirectory);
+
+            if (!diShared.Exists) diShared.Create();
+
+            if (!diFinal.Exists) diFinal.Create();
+        }
+
+        private void RepairManualUserWorkspace(string format)
+        {
+            DirectoryInfo diFinalTemplate = new DirectoryInfo(Path.Combine(FinalFormatDirectory, format + "_OK", "PLANTILLA"));
+
+            if (!diFinalTemplate.Exists) diFinalTemplate.Create();
+        }
+
+        private void InitManual()
+        {
+            try
+            {
+                StopManual = Convert.ToBoolean(GetConfigLine(3));
+                RestManual = Convert.ToBoolean(GetConfigLine(4));
+            }
+            catch
+            {
+                Log("Hay un error en el archivo de configuración... configuración Manual");
+                Thread.Sleep(10000);
+            }
+        }
+
+        private string GetConfigLine(int line)
+        {
+            return File.ReadAllLines(ConfigFile)[line - 1].Split('|')[1];
         }
 
         public void DoActivities()
         {
             Log("Inicia Karenx 0.9");
 
+            DateTime fecha;
             //TODO: revisar el uso de Thread.CurrentThread.IsBackground = true; y de task async etc.
             Thread automaticProcess = new Thread(() =>
             {
                 do
                 {
-
                     ////config.AppSettings.SectionInformation.ForceSave = true;
                     //ConfigurationManager.RefreshSection("appSettings");
                     //System.Configuration.Configuration config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
                     ////System.Configuration.Configuration config = ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.None);
                     //TODO: para que se pueda actualizar los valores.
-                    StopAuto = Convert.ToBoolean(ConfigurationManager.AppSettings["StopAuto"]);
-                    RestAuto = Convert.ToBoolean(ConfigurationManager.AppSettings["RestAuto"]);
-                    Sleep = Convert.ToInt32(ConfigurationManager.AppSettings["Sleep"]);
+                    InitAuto();
+                    RepairUserWorkspace();
+                    try
+                    {
+                        Sleep = Convert.ToInt32(GetConfigLine(5));
+                        SleepHour = Convert.ToInt32(GetConfigLine(6));
+                    }
+                    catch
+                    {
+                        Log("Hay un error en el archivo de configuración... configuración Sleep");
+                        Thread.Sleep(10000);
+                    }
 
                     if (!RestAuto)
                     {
                         //Thread.CurrentThread.IsBackground = true;
+                        Log("Inicio atención de proceso automático");
                         GetFormatsFromSharedDirectory();/*1*/
-                                                        //GetPdfFromMailBox();
+                        //GetPdfFromMailBox();
                         CreateFoldersByEachFormat();/*1*/
+                        //MoveFormatsNoProcess();
                         ExtractImagesFromFormats();/*1*/
-                                                   //ImproveImagesFromPdf(); /*1*/
+                        //ImproveImagesFromPdf(); /*1*/
                         GetApprovedFormats();/*1*/
-
                         CreateFoldersByEachDisapprovedFormat();/*1*/
-
-                        //GetScrapsHeaderDataImages();
                         GetScrapsDataImages(); /*1 - en teoría si llego hasta acá, todo estará bien aunque no necesarimente copiado al 100%*/
-                                               //GetScrapsDataImagesFull();
-                                               //GetHeaderDataFromScraps();
+                        //GetScrapsDataImagesFull();
                         GetDataFromScraps();/*1*/
-                                            //GetDataManualFromScraps();/*1*/
-                                            //GetDataFullFromRaw();/*1*/
-                        MoveFinalFormats(); /*1*/
-                        MoveFormatsNoProcess();/*1*/ //lvl 01
-                        //MoveScrapsErrorProcess();
+                        //GetDataFullFromRaw();/*1*/
                         BackupScrapsCorrectProcess();/*1*/
-
+                        //BackupManualScrapsCorrectProcess();
+                        MoveFinalFormats(); /*1*/
+                        //todo: HACER UNA ALERTA QUE INDIQUE CUANDO HAY PDFS EN LA CARPETA DEL SGTE MÉTODO.
+                        //MoveFormatsNoProcess();/*1*/ //lvl 01
+                        //MoveScrapsErrorProcess();
                         ApprovedFormats.Clear();
                         DisapprovedFormats.Clear();
+                        Log("Termino atención de proceso automático");
                     }
                     else
                     {
-                        Log("Descanso total de proceso automático... .");
+                        Log("Descanso de proceso automático... .");
                         Thread.Sleep(Sleep);
                     }
+                    fecha = DateTime.Now;
                 }
-                while (!StopAuto);
+                while (fecha.Hour != SleepHour || !StopAuto);
 
                 Log("Detengo proceso automático de forma normal");
             });
@@ -153,9 +220,18 @@ namespace To.Rpa.AppCTS.BL
             {
                 do
                 {
-                    StopManual = Convert.ToBoolean(ConfigurationManager.AppSettings["StopManual"]);
-                    RestManual = Convert.ToBoolean(ConfigurationManager.AppSettings["RestManual"]);
-                    Sleep = Convert.ToInt32(ConfigurationManager.AppSettings["Sleep"]);
+                    InitManual();
+                    RepairUserWorkspace();
+                    try
+                    {
+                        Sleep = Convert.ToInt32(GetConfigLine(5));
+                        SleepHour = Convert.ToInt32(GetConfigLine(6));
+                    }
+                    catch
+                    {
+                        Log("Hay un error en el archivo de configuración... configuración Sleep");
+                        Thread.Sleep(10000);
+                    }
 
                     if (!RestManual)
                     {
@@ -163,19 +239,18 @@ namespace To.Rpa.AppCTS.BL
                         /* run your code here */
                         Log("Inicio atención de proceso manual");
                         GetDataManualFromScraps();
-                        MoveManualFinalFormats();
-                        BackupManualScrapsCorrectProcess();
                         Log("Termino atención de proceso manual");
                         Log("Descanso por " + (Sleep / 1000) + " segundos");
                         Thread.Sleep(Sleep);
                     }
                     else
                     {
-                        Log("Descanso total de proceso manual... .");
+                        Log("Descanso de proceso manual... .");
                         Thread.Sleep(Sleep);
                     }
+                    fecha = DateTime.Now;
                 }
-                while (!StopManual);
+                while (fecha.Hour != SleepHour || !StopAuto);
 
                 Log("Detengo proceso manual de forma normal");
             });
@@ -190,74 +265,107 @@ namespace To.Rpa.AppCTS.BL
         {
             foreach (BECTSFormat format in DisapprovedFormats)
             {
-                Log("#4.1| Inicia rutina #4.1 Crea carpetas por cada formato desaprobado dentro de la ruta: " + ManualScrapsDirectory);
+                Log("#1-MANUAL| Inicia rutina #4.1 Crea carpetas por cada formato desaprobado dentro de la ruta: " + FinalFormatDirectory);
                 try
                 {
                     DirectoryInfo diScraps = new DirectoryInfo(ScrapsDirectory + format.FormatCode);
-                    DirectoryInfo diManual = new DirectoryInfo(ManualScrapsDirectory);
+                    diScraps.Refresh();
+                    DirectoryInfo diFinal = new DirectoryInfo(FinalFormatDirectory);
 
-                    if (diManual.GetDirectories(format.FormatCode + "*").Length == 0)
+                    DirectoryInfo[] directories = diFinal.GetDirectories(format.FormatCode + "_MANUAL*");
+
+                    int length = directories.Length;
+                    if (length == 0)
                     {
-                        diScraps.MoveTo(ManualScrapsDirectory + format.FormatCode);
-                        Log("#4.1| Se movió hacia " + ManualScrapsDirectory + format.FormatCode);
+                        diScraps.MoveTo(FinalFormatDirectory + format.FormatCode + "_MANUAL");
+                        Log("#1-MANUAL| Se movió hacia " + FinalFormatDirectory + format.FormatCode);
                     }
                     else
                     {
-                        Log("#4.1| Ya existe el directorio " + ManualScrapsDirectory + format.FormatCode);
+                        diScraps.MoveTo(FinalFormatDirectory + format.FormatCode + "_MANUAL_" + length.ToString());
+                        Log("#1-MANUAL| Ya existe el directorio " + FinalFormatDirectory + format.FormatCode);
                     }
-
-                    //diManual.GetDirectories("PLANTILLA")[0].Delete(true);
                 }
                 catch (Exception exc)
                 {
-                    Methods.LogProceso("#4.1| ERROR: " + exc.ToString());
+                    Methods.LogProceso("#1-MANUAL| ERROR: " + exc.ToString());
+                }
+
+                if (DisapprovedFormats.IndexOf(format) == DisapprovedFormats.Count)
+                {
+                    Log("#1-MANUAL| Termina rutina #1");
                 }
             }
-
-            Log("#4.1| Termina rutina #4.1");
         }
 
         private void MoveFinalFormats()
         {
-            Log("#7| Inicia rutina #7");
             try
             {
+                if (ApprovedFormats.Count > 0)
+                {
+                    Log("#7| Inicia rutina #7");
+                }
+
                 foreach (BECTSFormat format in ApprovedFormats)
                 {
-                    //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
-
-                    DirectoryInfo finalFormatDirectory = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()));
-
-                    DirectoryInfo userFinal = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()));
-
-                    DirectoryInfo[] directories = userFinal.GetDirectories(format.FormatCode + "*");
-                     
-                    if (directories.Length > 0)
+                    try
                     {
-                        finalFormatDirectory.MoveTo(FinalFormatDirectory + "_" + directories.Length);
+                        DirectoryInfo diBackup = new DirectoryInfo(Path.Combine(BackupDirectory, format.FormatCode.ToString()));
+
+                        DirectoryInfo diFinal = new DirectoryInfo(FinalFormatDirectory);
+                        DirectoryInfo[] directories = diFinal.GetDirectories(format.FormatCode + "*");
+
+                        if (directories.Length > 0)
+                        {
+                            diFinal = new DirectoryInfo(FinalFormatDirectory + format.FormatCode + "_" + directories.Length);
+                        }
+                        else
+                        {
+                            diFinal = new DirectoryInfo(FinalFormatDirectory + format.FormatCode);
+                        }
+                        CopyFilesRecursively(diBackup, diFinal);
+                        //Directory.Move(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()), diFinal.FullName);
+
+                        DirectoryInfo diScraps = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()));
+                        RecursiveDelete(diScraps);
+                        //diScraps.Delete(true);
                     }
-                    else
+                    catch (Exception exc)
                     {
-                        finalFormatDirectory.MoveTo(FinalFormatDirectory);
+                        Log("#7| INNER-ERROR: " + exc.ToString());
                     }
-                    /*DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString(), "PLANTILLA"));
 
-                    FileInfo[] files = finalFormat.GetFiles("*.xls*");
-
-
-                    foreach (FileInfo file in files)
+                    if (ApprovedFormats.IndexOf(format) == ApprovedFormats.Count)
                     {
-                        //File.Move(file.FullName, FinalFormatDirectory + file.Name);
-                        //TODO:cambiar por move más length...
-                        File.Copy(file.FullName, FinalFormatDirectory + file.Name, true);
-                    }*/
+                        Log("#7| Termina rutina #7");
+                    }
                 }
             }
             catch (Exception exc)
             {
                 Log("#7| " + exc.ToString());
             }
-            Log("#7| Termina rutina #7");
+        }
+
+        public static void RecursiveDelete(DirectoryInfo baseDir)
+        {
+            if (!baseDir.Exists)
+                return;
+
+            foreach (var dir in baseDir.EnumerateDirectories())
+            {
+                RecursiveDelete(dir);
+            }
+            baseDir.Delete(true);
+        }
+
+        public static void CopyFilesRecursively(DirectoryInfo source, DirectoryInfo target)
+        {
+            foreach (DirectoryInfo dir in source.GetDirectories())
+                CopyFilesRecursively(dir, target.CreateSubdirectory(dir.Name));
+            foreach (FileInfo file in source.GetFiles())
+                file.CopyTo(Path.Combine(target.FullName, file.Name));
         }
 
         private void MoveManualFinalFormats()
@@ -265,25 +373,27 @@ namespace To.Rpa.AppCTS.BL
             Log("#x| Inicia rutina #7");
             try
             {
+                //Desde el inicio automático.
                 foreach (BECTSFormat format in DisapprovedFormats)
                 {
-                    if (format.Done)
+                    DirectoryInfo diManual = new DirectoryInfo(Path.Combine(ManualScrapsDirectory, format.FormatCode.ToString()));
+
+                    DirectoryInfo diFinal = new DirectoryInfo(FinalFormatDirectory);
+                    DirectoryInfo[] directories = diFinal.GetDirectories(format.FormatCode + "*");
+
+                    if (directories.Length > 0)
                     {
-                        //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
-                        DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ManualScrapsDirectory, format.FormatCode.ToString(), "PLANTILLA"));
-
-                        FileInfo[] files = finalFormat.GetFiles("*.xls*");
-
-                        foreach (FileInfo file in files)
-                        {
-                            //File.Move(file.FullName, FinalFormatDirectory + file.Name);
-                            //TODO:cambiar por move más length...
-                            File.Copy(file.FullName, FinalFormatDirectory + file.Name, true);
-                        }
+                        diFinal = new DirectoryInfo(FinalFormatDirectory + format.FormatCode + "_" + directories.Length);
                     }
+                    else
+                    {
+                        diFinal = new DirectoryInfo(FinalFormatDirectory + format.FormatCode);
+                    }
+                    CopyFilesRecursively(diManual, diFinal);
+
+                    DirectoryInfo diScraps = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()));
+                    diScraps.Delete(true);
                 }
-
-
             }
             catch (Exception exc)
             {
@@ -391,10 +501,17 @@ namespace To.Rpa.AppCTS.BL
 
             for (int i = 0; i < totalFiles; i++)
             {
-                if (!File.Exists(WrongPdfsDirectory + files[i].Name))
+                try
                 {
-                    File.Move(OriginDirectory + files[i].Name,
-                        WrongPdfsDirectory + files[i].Name);
+                    if (!File.Exists(WrongPdfsDirectory + files[i].Name))
+                    {
+                        File.Move(OriginDirectory + files[i].Name,
+                            WrongPdfsDirectory + files[i].Name);
+                    }
+                }
+                catch (Exception exc)
+                {
+                    Log("#9| ERROR: " + exc.ToString());
                 }
             }
         }
@@ -409,16 +526,43 @@ namespace To.Rpa.AppCTS.BL
 
         private void BackupScrapsCorrectProcess()
         {
-            Log("#8| Inicia rutina");
             try
             {
+                if (ApprovedFormats.Count > 0)
+                {
+                    Log("#8| Inicia rutina");
+                }
+
                 foreach (BECTSFormat format in ApprovedFormats)
                 {
-                    if (format.Done)
+                    try
                     {
-                        //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
-                        DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()));
-                        finalFormat.MoveTo(BackupDirectory + format.FormatCode.ToString());
+                        if (format.Done)
+                        {
+                            DirectoryInfo diScraps = new DirectoryInfo(Path.Combine(ScrapsDirectory, format.FormatCode.ToString()));
+
+                            DirectoryInfo diBackup = new DirectoryInfo(BackupDirectory);
+                            DirectoryInfo[] directories = diBackup.GetDirectories(format.FormatCode + "*");
+
+                            if (directories.Length > 0)
+                            {
+                                diBackup = new DirectoryInfo(BackupDirectory + format.FormatCode + "_" + directories.Length);
+                            }
+                            else
+                            {
+                                diBackup = new DirectoryInfo(BackupDirectory + format.FormatCode);
+                            }
+                            CopyFilesRecursively(diScraps, diBackup);
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        Log("#8| INNER-ERROR: " + exc.ToString());
+                    }
+
+                    if (ApprovedFormats.IndexOf(format) == ApprovedFormats.Count)
+                    {
+                        Log("#8| Termina rutina");
                     }
                 }
             }
@@ -426,29 +570,39 @@ namespace To.Rpa.AppCTS.BL
             {
                 Log("#8| ERROR: " + exc.ToString());
             }
-            Log("#8| Termina rutina");
         }
 
         private void BackupManualScrapsCorrectProcess()
         {
-            Log("#x2| Inicia rutina");
             try
             {
-                foreach (BECTSFormat format in DisapprovedFormats)
+                if (DisapprovedFormats.Count > 0)
                 {
-                    if (format.Done)
+                    Log("#3-MANUAL| Inicia rutina");
+
+                    DirectoryInfo diFinal = new DirectoryInfo(FinalFormatDirectory);
+                    DirectoryInfo[] directories = diFinal.GetDirectories(DisapprovedFormats[0].FormatCode + "_MANUAL_OK*");
+
+                    int length = directories.Length;
+
+                    if (length == 0)
                     {
-                        //   d: \Users\juarui\Source\Repos\RPA\To.Rpa.AppCTS\CTS\WORKSPACE\RETAZOS\4023\PLANTILLA
-                        DirectoryInfo finalFormat = new DirectoryInfo(Path.Combine(ManualScrapsDirectory, format.FormatCode.ToString() + "_MANUAL"));
-                        finalFormat.MoveTo(BackupDirectory + format.FormatCode.ToString());
+
                     }
+                    else
+                    {
+
+                    }
+
+                    directories[0].MoveTo(BackupDirectory + directories[0].Name + (directories.Length == 0 ? "" : directories.Length.ToString()));
+
+                    Log("#3-MANUAL| Termina rutina");
                 }
             }
             catch (Exception exc)
             {
-                Log("#x2| ERROR: " + exc.ToString());
+                Log("#3-MANUAL| ERROR: " + exc.ToString());
             }
-            Log("#x2| Termina rutina");
         }
 
         private void MoveBackupAll()
@@ -478,10 +632,8 @@ namespace To.Rpa.AppCTS.BL
         /// </summary>
         private void CreateFoldersByEachFormat()
         {
-            Log("#2| Inicia rutina #2 Crea carpetas por cada formato a procesar de la carpeta: " + OriginDirectory + " dentro de la ruta: " + ScrapsDirectory);
             try
             {
-                //TODO se puede cambiar por la lista de la variable de clasee...
                 DirectoryInfo diOrigin = new DirectoryInfo(OriginDirectory);
                 DirectoryInfo diScraps = new DirectoryInfo(ScrapsDirectory);
                 DirectoryInfo diWrongPdfs = new DirectoryInfo(WrongPdfsDirectory);
@@ -489,38 +641,53 @@ namespace To.Rpa.AppCTS.BL
 
                 FileInfo[] originFiles = diOrigin.GetFiles();
 
+                if (originFiles.Length > 0)
+                {
+                    Log("#2| Inicia rutina #2 Crea carpetas por cada formato a procesar de la carpeta: " + OriginDirectory + " dentro de la ruta: " + ScrapsDirectory);
+                }
+
                 for (int i = 0; i < originFiles.Length; i++)
                 {
-                    int formatCode = getFormatCode(originFiles[i].Name);
-
-                    if (formatCode != 0)
+                    try
                     {
-                        string parcialPath = Path.Combine(ScrapsDirectory, formatCode.ToString());
+                        int formatCode = getFormatCode(originFiles[i].Name);
 
-                        Log("#2| Formato a procesar " + formatCode);
-                        //TODO: Checar si es que hay carpeta repetido cuidado se sobreescribirá..
-                        diScrapsChild = new DirectoryInfo(parcialPath + @"\");
-                        diScrapsChild.Create();
-                        diScrapsChild.Refresh();
+                        if (formatCode != 0)
+                        {
+                            string parcialPath = Path.Combine(ScrapsDirectory, formatCode.ToString());
 
-                        diScrapsChild = new DirectoryInfo(parcialPath + @"\ORIGINAL\");
-                        diScrapsChild.Create();
-                        diScrapsChild.Refresh();
+                            Log("#2| Formato a procesar " + formatCode);
+                            //TODO: Checar si es que hay carpeta repetido cuidado se sobreescribirá..
+                            diScrapsChild = new DirectoryInfo(parcialPath + @"\");
+                            diScrapsChild.Create();
+                            diScrapsChild.Refresh();
 
-                        diScrapsChild = new DirectoryInfo(parcialPath + @"\PLANTILLA\");
-                        diScrapsChild.Create();
-                        diScrapsChild.Refresh();
+                            diScrapsChild = new DirectoryInfo(parcialPath + @"\ORIGINAL\");
+                            diScrapsChild.Create();
+                            diScrapsChild.Refresh();
 
-                        File.Move(OriginDirectory + originFiles[i].Name, parcialPath + @"\ORIGINAL\" + originFiles[i].Name);
-                        Log("#2| Se movió archivo: " + originFiles[i].Name + " hacia: " + parcialPath + @"\ORIGINAL\" + originFiles[i].Name);
+                            diScrapsChild = new DirectoryInfo(parcialPath + @"\PLANTILLA\");
+                            diScrapsChild.Create();
+                            diScrapsChild.Refresh();
 
-                        //ApprovedFormatsByName.Add(parcialPath + @"\ORIGINAL\" + originFiles[i].Name);
+                            File.Move(originFiles[i].FullName, parcialPath + @"\ORIGINAL\" + originFiles[i].Name);
+                            Log("#2| Se movió archivo: " + originFiles[i].Name + " hacia: " + parcialPath + @"\ORIGINAL\" + originFiles[i].Name);
+                        }
+                        else
+                        {
+                            Log("#2| El archivo " + originFiles[i].Name + " no tiene el nombre de archivo en el formato correcto.");
+                            File.Move(OriginDirectory + originFiles[i].Name, WrongPdfsDirectory + originFiles[i].Name);
+                            Log("#2| Se movió archivo: " + originFiles[i].Name + " hacia: " + WrongPdfsDirectory + originFiles[i].Name);
+                        }
                     }
-                    else
+                    catch (Exception exc)
                     {
-                        Log("#2| El archivo " + originFiles[i].Name + " no tiene el nombre de archivo en el formato correcto.");
-                        File.Move(OriginDirectory + originFiles[i].Name, WrongPdfsDirectory + originFiles[i].Name);
-                        Log("#2| Se movió archivo: " + originFiles[i].Name + " hacia: " + WrongPdfsDirectory + originFiles[i].Name);
+                        Methods.LogProceso("#2| INNER-ERROR: " + exc.ToString());
+                    }
+
+                    if (originFiles.Length == (i + 1))
+                    {
+                        Log("#2| Termina rutina #2");
                     }
                 }
             }
@@ -528,37 +695,53 @@ namespace To.Rpa.AppCTS.BL
             {
                 Methods.LogProceso("#2| ERROR: " + exc.ToString());
             }
-            Log("#2| Termina rutina #2");
         }
 
         private void ExtractImagesFromFormats()
         {
-            Log("#3| Inicia rutina #3 Extrae imágenes de formato pdf en la misma ruta por formato " + ScrapsDirectory);
             try
             {
                 //TODO se puede cambiar por la lista de la variable de clasee...
                 DirectoryInfo diScraps = new DirectoryInfo(ScrapsDirectory);
                 DirectoryInfo[] directories = diScraps.GetDirectories();
 
+                if (directories.Length > 0)
+                {
+                    Log("#3| Inicia rutina #3 Extrae imágenes de formato pdf en la misma ruta por formato " + ScrapsDirectory);
+                }
+
                 for (int i = 0; i < directories.Length; i++)
                 {
+                    if (i != 0) { break; }
 
-                    int format = getFormatCode(directories[i].Name);
-                    DirectoryInfo diChildScraps = new DirectoryInfo(ScrapsDirectory + format + @"\ORIGINAL\");
+                    try
+                    {
+                        int format = getFormatCode(directories[i].Name);
+                        DirectoryInfo diChildScraps = new DirectoryInfo(ScrapsDirectory + format + @"\ORIGINAL\");
 
-                    Log("#3| Formato a procesar " + format);
+                        Log("#3| Formato a procesar " + format);
 
-                    string imagePath = directories[i].FullName + @"\ORIGINAL\base_" + format + "_" + "{0}.png";
+                        string imagePath = directories[i].FullName + @"\ORIGINAL\base_" + format + "_" + "{0}.png";
 
-                    PdfToPng(diChildScraps.GetFiles("*.pdf")[0].FullName, imagePath, 0, XDpi, YDpi);
+                        PdfToPng(diChildScraps.GetFiles("*.pdf")[0].FullName, imagePath, 0, XDpi, YDpi);
+
+                        if (directories.Length == (i + 1))
+                        {
+                            Log("#3| Termina rutina #3");
+                        }
+                    }
+                    catch (Exception exc)
+                    {
+                        Log("#3| INNER-ERROR: " + exc.ToString());
+                    }
                 }
             }
             catch (Exception exc)
             {
                 Log("#3| ERROR: " + exc.ToString());
             }
-            Log("#3| Termina rutina #3");
         }
+
         /// <summary>
         /// 
         /// </summary>
@@ -615,31 +798,49 @@ namespace To.Rpa.AppCTS.BL
         /// </summary>
         private void GetFormatsFromSharedDirectory()
         {
-            Log("#1| Inicia rutina #1 Obtiene archivos origen de directorio compartido: " + OriginSharedDirectory);
             try
             {
                 DirectoryInfo diOrigin = new DirectoryInfo(OriginSharedDirectory);
-                FileInfo[] originFiles = diOrigin.GetFiles();
+                FileInfo[] originFiles = diOrigin.GetFiles("*.pdf");
+
+                if (originFiles.Length > 0)
+                {
+                    Log("#1| Inicia rutina #1 Obtiene archivos origen de directorio compartido: " + OriginSharedDirectory);
+                }
 
                 for (int i = 0; i < originFiles.Length; i++)
                 {
-                    DirectoryInfo diDestionation = new DirectoryInfo(OriginDirectory);
-
-                    FileInfo[] destinationFiles = diDestionation.GetFiles(originFiles[i].Name);
-
-                    int length = destinationFiles.Length;
-
-                    if (destinationFiles.Length > 0)
+                    try
                     {
-                        File.Move(originFiles[i].FullName,
-                            diDestionation.FullName + GetCustomFileName(originFiles[i].Name, length.ToString()));
-                        Log("#1| Formato ya existente, se colocó correlativo");
-                        Log("#1| Se movió archivo: " + originFiles[i].Name + " hacia: " + diDestionation.FullName + GetCustomFileName(originFiles[i].Name, length.ToString()));
+                        DirectoryInfo diDestionation = new DirectoryInfo(OriginDirectory);
+
+                        FileInfo[] destinationFiles = diDestionation.GetFiles(Path.GetFileNameWithoutExtension(originFiles[i].Name) + "*.pdf");
+
+                        int length = destinationFiles.Length;
+
+                        if (destinationFiles.Length > 0)
+                        {
+                            File.Move(originFiles[i].FullName,
+                                diDestionation.FullName + GetCustomFileName(RemoveDiacritics(originFiles[i].Name), length.ToString()));
+                            Log("#1| Formato ya existente, se colocó correlativo");
+                            Log("#1| Se movió archivo: " + originFiles[i].Name + " hacia: " + diDestionation.FullName + GetCustomFileName(RemoveDiacritics(originFiles[i].Name), length.ToString()));
+                        }
+                        else
+                        {
+                            File.Move(originFiles[i].FullName, diDestionation.FullName + RemoveDiacritics(originFiles[i].Name));
+                            Log("#1| Se movió archivo: " + originFiles[i].Name + " hacia: " + diDestionation.FullName + RemoveDiacritics(originFiles[i].Name));
+                        }
+                        diOrigin.Refresh();
+                        diDestionation.Refresh();
                     }
-                    else
+                    catch (Exception exc)
                     {
-                        File.Move(diOrigin.FullName + originFiles[i].Name, diDestionation.FullName + originFiles[i].Name);
-                        Log("#1| Se movió archivo: " + originFiles[i].Name + " hacia: " + diDestionation.FullName + originFiles[i].Name);
+                        Log("#1| INNER-ERROR: " + exc.ToString());
+                    }
+
+                    if (originFiles.Length == (i + 1))
+                    {
+                        Log("#1| Termina rutina #1");
                     }
                 }
             }
@@ -647,8 +848,27 @@ namespace To.Rpa.AppCTS.BL
             {
                 Log("#1| ERROR: " + exc.ToString());
             }
+        }
 
-            Log("#1| Termina rutina #1");
+        //This is wrong. German characters ä and ö and ü get latinized as ae ue and oe, and not as a, o u
+        //Also, Polish letter ł is ignored
+        //Also Norse ø is ignored
+        //So, this solution doesn't work for Norwegian ø, Polish ł, Turkish ı, Azeri ə, etc. Basically, for any letters without separable diacritics.
+        static string RemoveDiacritics(string text)
+        {
+            var normalizedString = text.Normalize(NormalizationForm.FormD);
+            var stringBuilder = new StringBuilder();
+
+            foreach (var c in normalizedString)
+            {
+                var unicodeCategory = CharUnicodeInfo.GetUnicodeCategory(c);
+                if (unicodeCategory != UnicodeCategory.NonSpacingMark)
+                {
+                    stringBuilder.Append(c);
+                }
+            }
+
+            return stringBuilder.ToString().Normalize(NormalizationForm.FormC);
         }
 
         private void Log(string msg)
@@ -664,7 +884,6 @@ namespace To.Rpa.AppCTS.BL
 
         private void GetApprovedFormats()
         {
-            Log("#4| Inicia rutina #4 Obtiene formatos aprobados de manera automática");
             DirectoryInfo di = new DirectoryInfo(ScrapsDirectory);
             string fileName = "";
             string directoryFullName = "";
@@ -675,9 +894,15 @@ namespace To.Rpa.AppCTS.BL
             DirectoryInfo[] directories = di.GetDirectories();
             try
             {
+                if (directories.Length > 0)
+                {
+                    Log("#4| Inicia rutina #4 Obtiene formatos aprobados de manera automática");
+                }
 
                 for (int i = 0; i < directories.Length; i++)
                 {
+                    if (i != 0) { break; }
+
                     List<BECTSImagePage> lstBECTSImagePages = new List<BECTSImagePage>();
                     FoundHeader = false;
 
@@ -687,101 +912,107 @@ namespace To.Rpa.AppCTS.BL
                     di = new DirectoryInfo(directoryFullName + @"\ORIGINAL\");
                     FileInfo[] files = di.GetFiles("base_" + directoryName + "*");
 
-                    if (directoryName == "4038")
-                    {
-
-                    }
-
                     for (int o = 0; o < files.Length; o++)
                     {
-                        UInt16 attempts = 0;
-                        while (attempts < Attempts)
+                        try
                         {
-                            try
+                            Log("#4.1| Inicia rutina #4.1 Evalúa imágenes de manera automática");
+                            UInt16 attempts = 0;
+                            while (attempts < Attempts)
                             {
-                                File.Copy(files[o].FullName, files[o].FullName.Replace(@"\ORIGINAL", ""), true);
-                                Log("#4| Copia archivo " + files[o].FullName + " a nivel superior");
-                                attempts = Attempts;
-                            }
-                            catch (Exception exc)
-                            {
-                                Log(exc.ToString());
-                                attempts++;
-                            }
-                        }
-
-                        for (int u = 0; u < 4; u++)
-                        {
-                            using (Bitmap image = new Bitmap(files[o].FullName.Replace(@"\ORIGINAL", "")))
-                            {
-                                Bitmap newImage = null;
-
-                                //AHORA SE EVALÚA POR NRO DOCUMENTO //COLUMNA 4 - NRO DOCUMENTO
-                                if (!FoundHeader)
+                                try
                                 {
-                                    newImage = Methods.cropAtRect(image, new Rectangle(1570, 1494, 350, image.Height - 1494));
+                                    File.Copy(files[o].FullName, files[o].FullName.Replace(@"\ORIGINAL", ""), true);
+                                    Log("#4.1| Copia archivo " + files[o].FullName + " a nivel inferior");
+                                    attempts = Attempts;
                                 }
-                                else
+                                catch (Exception exc)
                                 {
-                                    newImage = Methods.cropAtRect(image, new Rectangle(1570, 20, 350, image.Height - 20));
+                                    Log("#4.1| ERROR " + exc.ToString());
+                                    attempts++;
                                 }
-                                fileName = files[o].DirectoryName.Replace(@"\ORIGINAL", "") + @"\" + Path.GetFileNameWithoutExtension(files[o].Name) + "_4" + Path.GetExtension(files[0].Name);
+                            }
 
-                                newImage.Save(fileName);
-                                //Methods.LogProceso("PASO #5: Se guarda el archivo: " + fileName);
-                                Log("#4| Se guarda el scrap de Nro Documento de la imagen " + (o + 1) + ": " + fileName);
+                            for (int u = 0; u < 4; u++)
+                            {
+                                Log("#4.2| Inicia rutina #4.2 Rota imagen " + files[o].FullName.Replace(@"\ORIGINAL", "") + " hasta encontrar posición adecuada de formato");
 
-                                if (IsDataImage(fileName))
+                                using (Bitmap image = new Bitmap(files[o].FullName.Replace(@"\ORIGINAL", "")))
                                 {
-                                    Methods.LogProceso("#4: Validacion de imagen OK: " + fileName);
-                                    approved = true;
+                                    Bitmap newImage = null;
 
+                                    //AHORA SE EVALÚA POR NRO DOCUMENTO //COLUMNA 4 - NRO DOCUMENTO
                                     if (!FoundHeader)
                                     {
-                                        lstBECTSImagePages.Add(new BECTSImagePage { CodePage = files[o].Name, isHeader = true });
-                                        Col2ImagesPagesTemp.Add(new BECTSImagePage
-                                        {
-                                            CodePage = files[o].Name,
-                                            isHeader = true,
-                                            ImagePagesScraps = new List<BECTSScrap>()
-                                        {
-                                            new BECTSScrap { ScrapPath = fileName }
-                                        }
-                                        });
-
-                                        FoundHeader = true;
+                                        newImage = Methods.cropAtRect(image, new Rectangle(1570, 1494, 350, image.Height - 1494));
                                     }
                                     else
                                     {
-                                        lstBECTSImagePages.Add(new BECTSImagePage { CodePage = files[o].Name });
-                                        Col2ImagesPagesTemp.Add(new BECTSImagePage
+                                        newImage = Methods.cropAtRect(image, new Rectangle(1570, 20, 350, image.Height - 20));
+                                    }
+                                    //fileName = files[o].DirectoryName.Replace(@"\ORIGINAL", "") + @"\" + Path.GetFileNameWithoutExtension(files[o].Name) + "_4" + Path.GetExtension(files[0].Name);
+                                    fileName = files[o].DirectoryName.Replace(@"\ORIGINAL", "") + @"\" + Path.GetFileNameWithoutExtension(files[o].Name) + "_NroDoc" + Path.GetExtension(files[0].Name);
+
+                                    newImage.Save(fileName);
+                                    //Methods.LogProceso("PASO #5: Se guarda el archivo: " + fileName);
+                                    Log("#4.2| Se guarda el scrap de Nro Documento de la imagen " + (o + 1) + ": " + fileName);
+
+                                    if (IsDataImage(fileName))
+                                    {
+                                        Methods.LogProceso("#4.2: Validacion de imagen OK: " + fileName);
+                                        approved = true;
+
+                                        if (!FoundHeader)
                                         {
-                                            CodePage = files[o].Name,
-                                            ImagePagesScraps = new List<BECTSScrap>()
+                                            lstBECTSImagePages.Add(new BECTSImagePage { CodePage = files[o].Name, isHeader = true });
+                                            Col2ImagesPagesTemp.Add(new BECTSImagePage
+                                            {
+                                                CodePage = files[o].Name,
+                                                isHeader = true,
+                                                ImagePagesScraps = new List<BECTSScrap>()
                                         {
                                             new BECTSScrap { ScrapPath = fileName }
                                         }
-                                        });
-                                    }
-                                    break;
-                                }
-                                else
-                                {
-                                    Log("#4| Validacion NOK se procede a rotar: " + files[o].Name);
-                                    ImageRotate(image, files[o].FullName.Replace(@"\ORIGINAL", ""));
-                                }
+                                            });
 
-                                //Me aseguro que termine la imagen en horizontal.
-                                /*if (u == 3)
-                                {
-                                    if (image.Width < image.Height)
+                                            FoundHeader = true;
+                                        }
+                                        else
+                                        {
+                                            lstBECTSImagePages.Add(new BECTSImagePage { CodePage = files[o].Name });
+                                            Col2ImagesPagesTemp.Add(new BECTSImagePage
+                                            {
+                                                CodePage = files[o].Name,
+                                                ImagePagesScraps = new List<BECTSScrap>()
+                                        {
+                                            new BECTSScrap { ScrapPath = fileName }
+                                        }
+                                            });
+                                        }
+                                        break;
+                                    }
+                                    else
                                     {
+                                        Log("#4.2| Validacion NOK se procede a rotar: " + files[o].Name);
                                         ImageRotate(image, files[o].FullName.Replace(@"\ORIGINAL", ""));
                                     }
 
-                                }*/
-                            }
+                                    //Me aseguro que termine la imagen en horizontal.
+                                    /*if (u == 3)
+                                    {
+                                        if (image.Width < image.Height)
+                                        {
+                                            ImageRotate(image, files[o].FullName.Replace(@"\ORIGINAL", ""));
+                                        }
 
+                                    }*/
+                                }
+
+                            }
+                        }
+                        catch (Exception exc)
+                        {
+                            Log("#4.1| ERROR " + exc.Message);
                         }
                     }
 
@@ -795,6 +1026,7 @@ namespace To.Rpa.AppCTS.BL
 
                         approved = false;
                     }
+                    //TODO: al estar en otro thread, puede chocar... 
                     else
                     {
                         /*if (DisapprovedFormats.Find(x => x.FormatCode == int.Parse(directoryName)) != null)
@@ -807,19 +1039,26 @@ namespace To.Rpa.AppCTS.BL
                         /*}*/
                     }
 
+                    if (directories.Length == (i + 1))
+                    {
+                        Log("#4| Termina rutina #4");
+                    }
                 }
+
             }
             catch (Exception exc)
             {
                 Log("#4| ERROR: " + exc);
             }
-            Log("#4| Termina rutina #4");
         }
 
         private void GetScrapsDataImages()
         {
-            Log("#5| Inicia rutina #5 Obtiene Scraps de formatos aprobados"); //de manera automática
-            Log("#5| Formatos aprobados: " + ApprovedFormats.Count);
+            if (ApprovedFormats.Count > 0)
+            {
+                Log("#5| Inicia rutina #5 Obtiene Scraps de formatos aprobados de manera automática");
+                Log("#5| Formatos aprobados: " + ApprovedFormats.Count);
+            }
 
             foreach (BECTSFormat formats in ApprovedFormats)
             {
@@ -884,7 +1123,8 @@ namespace To.Rpa.AppCTS.BL
                             {
                                 newImage = Methods.cropAtRect(image, new Rectangle(450, 20, 850, image.Height - 20));
                             }
-                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_2" + Path.GetExtension(imagePages.CodePage);
+                            //fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_2" + Path.GetExtension(imagePages.CodePage);
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_NombresYApellidos" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
                             imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "NombresYApellidos" });
 
@@ -897,7 +1137,7 @@ namespace To.Rpa.AppCTS.BL
                             {
                                 newImage = Methods.cropAtRect(image, new Rectangle(1320, 10, 250, image.Height - 10));
                             }
-                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_3" + Path.GetExtension(imagePages.CodePage);
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_TipDoc" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
                             imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "TipDoc" });
 
@@ -913,7 +1153,7 @@ namespace To.Rpa.AppCTS.BL
                             {
                                 newImage = Methods.cropAtRect(image, new Rectangle(1920, 10, 400, image.Height - 10));
                             }
-                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_5" + Path.GetExtension(imagePages.CodePage);
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_NroCta" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
                             imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "NroCta" });
 
@@ -926,7 +1166,7 @@ namespace To.Rpa.AppCTS.BL
                             {
                                 newImage = Methods.cropAtRect(image, new Rectangle(2420, 10, 220, image.Height - 10));
                             }
-                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_6" + Path.GetExtension(imagePages.CodePage);
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_CtaMoneda" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
                             imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "CtaMoneda" });
 
@@ -940,7 +1180,7 @@ namespace To.Rpa.AppCTS.BL
                             {
                                 newImage = Methods.cropAtRect(image, new Rectangle(2660, 10, 390, image.Height - 10));
                             }
-                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_7" + Path.GetExtension(imagePages.CodePage);
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_AbonoMonto" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
                             imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "AbonoMonto" });
 
@@ -953,7 +1193,7 @@ namespace To.Rpa.AppCTS.BL
                             {
                                 newImage = Methods.cropAtRect(image, new Rectangle(3040, 10, 220, image.Height - 10));
                             }
-                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_8" + Path.GetExtension(imagePages.CodePage);
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_AbonoMoneda" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
                             imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "AbonoMoneda" });
 
@@ -966,7 +1206,7 @@ namespace To.Rpa.AppCTS.BL
                             {
                                 newImage = Methods.cropAtRect(image, new Rectangle(3360, 10, 480, image.Height - 10));
                             }
-                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_9" + Path.GetExtension(imagePages.CodePage);
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_RemuMonto" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
                             imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "RemuMonto" });
 
@@ -979,7 +1219,7 @@ namespace To.Rpa.AppCTS.BL
                             {
                                 newImage = Methods.cropAtRect(image, new Rectangle(3840, 10, 220, image.Height - 10));
                             }
-                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_10" + Path.GetExtension(imagePages.CodePage);
+                            fileName = ScrapsDirectory + formats.FormatCode + @"\" + Path.GetFileNameWithoutExtension(imagePages.CodePage) + "_RemuMoneda" + Path.GetExtension(imagePages.CodePage);
                             newImage.Save(fileName);
                             imagePages.ImagePagesScraps.Add(new BECTSScrap { isHeaderValue = false, ScrapPath = fileName, Type = "RemuMoneda" });
 
@@ -1158,18 +1398,24 @@ namespace To.Rpa.AppCTS.BL
 
         private void GetDataManualFromScraps()
         {
-            Log("#6.1| Inicia rutina #6 Obtiene data de los Scraps");
-
-            DirectoryInfo diManual = new DirectoryInfo(ManualScrapsDirectory);
-            DirectoryInfo[] directories = diManual.GetDirectories("*_OK");
+            DirectoryInfo diFinal = new DirectoryInfo(FinalFormatDirectory);
+            DirectoryInfo[] directories = diFinal.GetDirectories("*_OK");
             try
             {
+                if (directories.Length > 0)
+                {
+                    Log("#2-MANUAL| Inicia rutina #2 Obtiene data de los Scraps");
+                }
+
                 for (int i = 0; i < directories.Length; i++)
                 {
+                    if (i != 0) { break; }
                     /*foreach (BECTSFormat formats in ApprovedFormats)
                     {*/
 
                     string formatCode = directories[i].Name.Replace("_OK", "");
+
+                    RepairManualUserWorkspace(formatCode);
 
                     //COPIO PLANTILLA CON NOMBRE DE FORMATO.
                     string filename = directories[i].FullName + @"\PLANTILLA\" + "Plantilla abono CTS" + " - " + formatCode + ".xlsx";
@@ -1282,22 +1528,58 @@ namespace To.Rpa.AppCTS.BL
                     }
                     actualRow = 0;
                     //next = nextTemp;
-                    directories[i].MoveTo(directories[i].FullName.Replace("_PROCESANDO", "_MANUAL"));
 
-                    DisapprovedFormats.Find(x => x.FormatCode.ToString().Equals(formatCode)).Done = true;
+                    files = directories[i].GetFiles("Complete*.png");
+                    for (int o = 0; o < files.Length; o++)
+                    {
+                        //dataCol = GetData(files[o].FullName);
+                        //dataCol = dataCol.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+                        //SetScrapsDetailData(filename, ref actualRow, ref lst, dataCol, formatCode, "RemuMoneda");
+
+
+                        List<List<string>> newLst = new KarenCore().GetData(files[o].FullName);
+
+                        FileInfo existingFile = new FileInfo(filename);
+
+                        using (ExcelPackage package = new ExcelPackage(existingFile))
+                        {
+                            ExcelWorksheet worksheet = package.Workbook.Worksheets[1];
+
+                            //worksheet.SetValue("", newLst[0][0]);
+                            worksheet.Cells[o, 1].Value = newLst[0][0];
+
+                        }
+
+                        actualRow += 2;
+                    }
+                    actualRow = 0;
+
+
+                    directories[i].MoveTo(directories[i].FullName.Replace("_PROCESANDO", "_OK_MANUAL"));
+
+                    //DisapprovedFormats.Find(x => x.FormatCode.ToString().Equals(formatCode)).Done = true;
+
+                    if (directories.Length == (i + 1))
+                    {
+                        Log("#2-MANUAL| Termina rutina #6.1 ");
+                    }
                 }
             }
             catch (Exception exc)
             {
-                Log("#6.1| ERROR: " + exc.ToString());
+                Log("#2-MANUAL| ERROR: " + exc.ToString());
             }
-            Log("#6.1| Termina rutina #6.1 ");
         }
 
         private void GetDataFromScraps()
         {
-            Log("#6| Inicia rutina #6 Obtiene data de los Scraps");
+            //TODO: casi no se han puesto catch porque casi no se han visualizado errores.
             List<String> dniList = new List<String>();
+
+            if (ApprovedFormats.Count > 0)
+            {
+                Log("#6| Inicia rutina #6 Obtiene data de los Scraps");
+            }
 
             foreach (BECTSFormat formats in ApprovedFormats)
             {
@@ -1347,8 +1629,12 @@ namespace To.Rpa.AppCTS.BL
                 }
 
                 formats.Done = true;
+
+                if (ApprovedFormats.IndexOf(formats) == ApprovedFormats.Count)
+                {
+                    Log("#6| Termina rutina #6 ");
+                }
             }
-            Log("#6| Termina rutina #6 ");
         }
 
         private void SetScrapsHeaderData(string fileName, List<string> dataCol, string formatCode, string scrapType)
@@ -1386,8 +1672,6 @@ namespace To.Rpa.AppCTS.BL
             {
                 try
                 {
-
-
                     //completar los campos tipo documento,numero de cuenta, moneda cuenta, nombre
                     //getValue(document, dniList, "C", "cusna1"); // nombres y apellidos
                     //getValue(document, dniList, "D", "custid"); // tipo documento
@@ -1612,6 +1896,12 @@ namespace To.Rpa.AppCTS.BL
 
                     //GetValor(newID, "cusna1");
                     //int i = Compute(names, GetValor(newID, "cusna1"));
+
+
+
+
+
+
 
                     return newID;
                 }
@@ -1866,7 +2156,7 @@ namespace To.Rpa.AppCTS.BL
             try
             {
                 //TODO: si va a ser solo números ubicar el engine en inglés, es más rápido al parecer... .
-                using (var engine = new TesseractEngine(@"./Dictionaries/Tesseract/eng", "eng", EngineMode.Default))
+                using (var engine = new TesseractEngine(@"./Dictionaries/Tesseract/esp", "spa", EngineMode.Default))
                 {
 
                     using (var img = Pix.LoadFromFile(scrapPath))
@@ -1907,13 +2197,19 @@ namespace To.Rpa.AppCTS.BL
             if (lstIDs.Count > 0)
             {
                 //TODO: meter el minimunAccepted en appconfig
-                Int16 minimunAccepted = (Int16)(lstIDs.Count / 2);
+                Int16 minimunAccepted = (Int16)(Math.Ceiling(Convert.ToDecimal(lstIDs.Count) / 2));
                 Int16 accepted = 0;
                 foreach (string ID in lstIDs)
                 {
-                    if (Regex.IsMatch(ID, @"\d{8}"))
+                    string newID = repairID("", ID);
+
+                    //TODO: solo está validando DNIS!!!
+                    if (newID.Length == 8)
                     {
-                        accepted++;
+                        if (Regex.IsMatch(ID, @"\d{8}"))
+                        {
+                            accepted++;
+                        }
                     }
                 }
 
