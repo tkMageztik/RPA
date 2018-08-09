@@ -38,6 +38,7 @@ namespace To.AtNinjas.Util
                     File.AppendAllText(path, DateTime.Now.ToString() + " | " + sMensaje.Trim() + " \r\n");
 
                 }
+                Console.WriteLine(sMensaje);
             }
             catch { }
         }

@@ -22,12 +22,13 @@ namespace To.Rpa.AppCapital
         {
             //TODO: Para configurar máximos intentos
             int i = 0;
-            try
-            {
-                UInt16 attempts = Convert.ToUInt16(ConfigurationManager.AppSettings["Attemps"]);
+            UInt16 attempts = 0;
 
-                do
+            do
+            {
+                try
                 {
+                    attempts = Convert.ToUInt16(ConfigurationManager.AppSettings["Attempts"]);
                     MFEmulatorPath = ConfigurationManager.AppSettings["MFEmulatorPath"].ToString().Trim();
                     MFEmulatorProcessName = ConfigurationManager.AppSettings["MFEmulatorProcessName"].ToString().Trim();
 
@@ -35,25 +36,30 @@ namespace To.Rpa.AppCapital
                     FileVersionInfo fvi = FileVersionInfo.GetVersionInfo(assembly.Location);
 
                     //TODO: La configuración puede estar a nivel de la torre de control
+                    
                     Methods.LogProceso("Se inicia proceso de AppCapital: " + fvi.ProductName + " -> " + MethodBase.GetCurrentMethod().Name);
                     Methods.Sleep();
                     Process px = Process.Start(MFEmulatorPath);
                     processID = px.Id;
-
                     new BLMain().DoActivities();
+                    Methods.LogProceso("Proceso finalizado");
+                    Console.WriteLine("Presione ENTER para cerrar esta ventana.");
+                    Console.ReadLine();
+                    break;
                 }
-                while (i < attempts);
+                catch (Exception exc)
+                {
+                    i++;
+                    Methods.LogProceso(" ERROR: " + exc.StackTrace + " " + MethodBase.GetCurrentMethod().Name);
+                    CloseEmulator();
+                }
+                finally
+                {
+                    Methods.LogProceso(" FINALLY: Intento nro: " + i);
+                }
             }
-            catch (Exception exc)
-            {
-                i++;
-                Methods.LogProceso(" ERROR: " + exc.StackTrace + " " + MethodBase.GetCurrentMethod().Name);
-                CloseEmulator();
-            }
-            finally
-            {
-                Methods.LogProceso(" FINALLY: Intento nro: " + i);
-            }
+            while (i < attempts);
+
         }
 
         public IntPtr GetWindowsHandleByProcessId(int processID)
@@ -140,11 +146,13 @@ namespace To.Rpa.AppCapital
 
                     var invokePattern = _0_Descendants_3[0].GetCurrentPattern(InvokePattern.Pattern) as InvokePattern;
                     invokePattern.Invoke();
+                    Methods.Sleep();
 
                 }
                 //Methods.Sleep();
                 //bool tt = (bool)_0.GetCurrentPropertyValue(AutomationElement.IsOffscreenProperty);
                 //SpinWait.SpinUntil(() => !tt, 5000);
+
                 var windowPattern = _0.GetCurrentPattern(WindowPattern.Pattern) as WindowPattern;
                 windowPattern.Close();
             }

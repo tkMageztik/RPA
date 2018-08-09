@@ -5,7 +5,7 @@
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <ProjectGuid>{D7F8158A-82EB-41B6-A389-8B8B479FA412}</ProjectGuid>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Tcs.Rpa.AppCapital.Mainframe</RootNamespace>
     <AssemblyName>Tcs.Rpa.AppCapital.Mainframe</AssemblyName>

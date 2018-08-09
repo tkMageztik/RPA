@@ -2,6 +2,7 @@
 using EHLLAPI;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Data.OleDb;
 using System.Diagnostics;
 using System.Linq;
@@ -9,6 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Automation;
+using To.AtNinjas.Util;
 
 namespace To.Rpa.AppCapital.Interfaces
 {
@@ -16,6 +18,15 @@ namespace To.Rpa.AppCapital.Interfaces
     {
         public void CheckCompleteLoad()
         {
+        }
+
+        private string User { get; set; }
+        private string Password { get; set; }
+
+        private void LoadAccess()
+        {
+            User = ConfigurationManager.AppSettings["MFUser"];
+            Password = ConfigurationManager.AppSettings["MFPass"];
         }
 
         public void DoActivities()
@@ -31,21 +42,18 @@ namespace To.Rpa.AppCapital.Interfaces
             Process[] p = Process.GetProcessesByName("pcsws");
             //p[0].WaitForInputIdle();
 
-            Thread.Sleep(3000);
+            Methods.Sleep();
 
+            LoadAccess();
             AutomationElement _0 = AutomationElement.FromHandle(p[0].MainWindowHandle);
 
             AutomationElementCollection _0_Descendants_1 = _0.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "ID de usuario:"));
-            //WinFormAdapter.SetText(_0_Descendants_1[1], "BFPJUARUI");
-
             ValuePattern etb = _0_Descendants_1[1].GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
-            etb.SetValue("BFPROBOP2");
-
+            etb.SetValue(User);
+            
             AutomationElementCollection _0_Descendants_2 = _0.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Contraseña:"));
-            //WinFormAdapter.SetText(_0_Descendants_2[1], "BFPJUARUI2");
-
             ValuePattern etb2 = _0_Descendants_2[1].GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
-            etb2.SetValue("BFPROBOP6");
+            etb2.SetValue(Password);
 
             //WinFormAdapter.ClickElement(WinFormAdapter.GetAEOnDescByName(_0, "Aceptar"));
             AutomationElementCollection _0_Descendants_3 = _0.FindAll(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, "Aceptar"));
