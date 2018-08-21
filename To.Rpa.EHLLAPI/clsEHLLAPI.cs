@@ -8,7 +8,7 @@
 //		  @                     @@
 //        Alt	                @A
 //        Alt Cursor	        @$
-//        AEhllapiFuncntion 	        @A@Q
+//        AEhllapiFuncntion 	        @A@Q (ESC)
 //        Backspace		        @<
 //        Backtab (Left Tab)	@B
 //        Clear	                @C

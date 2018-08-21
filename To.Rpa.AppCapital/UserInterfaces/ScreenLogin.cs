@@ -109,8 +109,8 @@ namespace To.Rpa.AppCapital.UserInterfaces
 
                     int row = 2;
                     //TODO: aqui mover capital... .
-                    string prestamo = "", banco, agencia, moneda, ctaTramite, cta, estado, capital, error;
-                    decimal monto;
+                    string prestamo = "", banco, agencia, moneda, ctaTramite, cta, estado, capital, error, deduccion;
+                    decimal monto, tryParse;
 
                     do
                     {
@@ -128,62 +128,106 @@ namespace To.Rpa.AppCapital.UserInterfaces
                             ctaTramite = worksheet.Cells[row, 6].Value == null ? "" : worksheet.Cells[row, 6].Value.ToString();
                             cta = worksheet.Cells[row, 7].Value == null ? "" : worksheet.Cells[row, 7].Value.ToString();
 
+                            Console.WriteLine("prestamo " + prestamo);
+                            Console.WriteLine("monto " + monto);
+                            Console.WriteLine("ctaTramite " + ctaTramite);
+                            Console.WriteLine("cta " + cta);
+
                             EhllapiWrapper.SetCursorPos(1167);
+                            EhllapiWrapper.SendStr("@F");
                             EhllapiWrapper.SendStr(prestamo);
+                            Console.ReadKey();
                             EhllapiWrapper.SetCursorPos(1327);
                             EhllapiWrapper.SendStr("9999");
                             EhllapiWrapper.SendStr("@2");
                             EhllapiWrapper.Wait();
 
+                            capital = null;
+
                             EhllapiWrapper.SetCursorPos(244);
                             EhllapiWrapper.ReadScreen(244, 14, out capital);
                             capital = capital.Substring(0, 14);
 
+                            Console.WriteLine("capiii " + row + " " + capital);
+                            Console.ReadKey();
 
                             //TODO: para que sirve esta validación? (si el contrato/préstamo no existe
-                            if (Decimal.TryParse(capital, out monto))
+                            if (Decimal.TryParse(capital, out tryParse))
                             {
-                                //TODO: validar en el excel que solo se puede ingresar un campo a la vez.
-                                if (!ctaTramite.Equals(""))
-                                {
-                                    EhllapiWrapper.SetCursorPos(603);
-                                    EhllapiWrapper.SendStr(ctaTramite);
-                                }
-                                else
-                                {
-                                    //TODO: CUENTA
-                                    EhllapiWrapper.SetCursorPos(540);
-                                    EhllapiWrapper.SendStr(cta);
-                                }
+                                Console.ReadKey();
+                                Console.WriteLine("entro JRDC " + row);
+                                //blanquear
+                                //(Pag/Cancela) / monto
+                                EhllapiWrapper.SetCursorPos(575);
+                                EhllapiWrapper.SendStr("@F");
 
-                                banco = worksheet.Cells[row, 3].Value.ToString();
-                                agencia = worksheet.Cells[row, 4].Value.ToString();
-                                moneda = worksheet.Cells[row, 5].Value.ToString();
+                                //Bn / Banco
+                                EhllapiWrapper.SetCursorPos(592);
+                                EhllapiWrapper.SendStr("@F");
+
+                                //Suc / Sucursal
+                                EhllapiWrapper.SetCursorPos(595);
+                                EhllapiWrapper.SendStr("@F");
+
+                                //Mda / Moneda 
+                                EhllapiWrapper.SetCursorPos(599);
+                                EhllapiWrapper.SendStr("@F");
+
+                                //Cuenta Contable / Cuenta Trámite
+                                EhllapiWrapper.SetCursorPos(603);
+                                EhllapiWrapper.SendStr("@F");
+
+                                //Cuenta
+                                EhllapiWrapper.SetCursorPos(620);
+                                EhllapiWrapper.SendStr("@F");
 
                                 EhllapiWrapper.SetCursorPos(575);
                                 EhllapiWrapper.SendStr(monto.ToString());
                                 EhllapiWrapper.SendStr("@A@+");
-                                EhllapiWrapper.SendStr("@T");
+                                EhllapiWrapper.Wait();
+                                //EhllapiWrapper.SendStr("@T");
 
-                                EhllapiWrapper.SetCursorPos(592);
-                                EhllapiWrapper.SendStr(banco);
+                                if (!ctaTramite.Equals(""))
+                                {
+                                    EhllapiWrapper.SetCursorPos(603);
+                                    EhllapiWrapper.SendStr(ctaTramite);
 
-                                EhllapiWrapper.SetCursorPos(595);
-                                EhllapiWrapper.SendStr(agencia);
+                                    banco = worksheet.Cells[row, 3].Value.ToString();
+                                    agencia = worksheet.Cells[row, 4].Value.ToString();
+                                    moneda = worksheet.Cells[row, 5].Value.ToString();
 
-                                EhllapiWrapper.SetCursorPos(599);
-                                EhllapiWrapper.SendStr(moneda);
+                                    EhllapiWrapper.SetCursorPos(592);
+                                    EhllapiWrapper.SendStr(banco);
+
+                                    EhllapiWrapper.SetCursorPos(595);
+                                    EhllapiWrapper.SendStr(agencia);
+
+                                    EhllapiWrapper.SetCursorPos(599);
+                                    EhllapiWrapper.SendStr(moneda);
+                                }
+                                else
+                                {
+                                    //TODO: CUENTA
+                                    EhllapiWrapper.SetCursorPos(620);
+                                    EhllapiWrapper.SendStr(cta);
+                                }
 
                                 EhllapiWrapper.SetCursorPos(1682);
+                                EhllapiWrapper.SendStr("@F");
                                 EhllapiWrapper.SendStr(prestamo + " / APLIC CAP");
-                                EhllapiWrapper.SendStr("@b");
-                                EhllapiWrapper.ReadScreen(244, 14, out error);
+                                EhllapiWrapper.SendStr("@E");
+                                EhllapiWrapper.Wait();
 
+                                /********************************************************/
+                                EhllapiWrapper.ReadScreen(244, 14, out error);
                                 if (error == "mensaje de error")
                                 {
                                     EhllapiWrapper.SendStr("@E");
                                     EhllapiWrapper.Wait();
-                                    if ("" == "existen deducciones")
+
+                                    EhllapiWrapper.ReadScreen(1467, 4, out deduccion);
+
+                                    if (!deduccion.Trim().Equals(""))
                                     {
                                         //TODO: UBICAR BIEN DEDUCCIONES
                                         EhllapiWrapper.SetCursorPos(1455);
@@ -191,10 +235,36 @@ namespace To.Rpa.AppCapital.UserInterfaces
                                         EhllapiWrapper.Wait();
                                     }
                                 }
+                                /********************************************************/
+
+                                //EhllapiWrapper.SetCursorPos(328);
+                                EhllapiWrapper.ReadScreen(328, 57, out error);
+
+                                if (error.Equals("Error en Número de Cuenta Contable o Falta, Favor Revisar"))
+                                {
+                                    Methods.LogProceso("ENTRÓ!");
+                                    EhllapiWrapper.SendStr("@E");
+                                    EhllapiWrapper.Wait();
+
+                                    EhllapiWrapper.ReadScreen(1455, 16, out deduccion);
+                                    Methods.LogProceso("Deducción obtenida " + deduccion);
+
+                                    //if (deduccion.Trim() == "existen deducciones")
+                                    if (!deduccion.Trim().Equals(""))
+                                    {
+                                        //TODO: UBICAR BIEN DEDUCCIONES
+                                        EhllapiWrapper.SetCursorPos(1455);
+                                        EhllapiWrapper.SendStr("@c");
+                                        EhllapiWrapper.Wait();
+                                    }
+                                } 
 
                                 //TODO: CAPITAL
                                 //MetodoRecursivo(monto);
 
+
+                                EhllapiWrapper.SendStr("@b");
+                                EhllapiWrapper.Wait();
 
                                 EhllapiWrapper.SetCursorPos(899);
                                 EhllapiWrapper.SendStr(".");
@@ -206,7 +276,6 @@ namespace To.Rpa.AppCapital.UserInterfaces
                                 EhllapiWrapper.Wait();
 #endif
 
-
                                 EhllapiWrapper.SetCursorPos(1167);
                                 EhllapiWrapper.SendStr("@F");
                                 EhllapiWrapper.Wait();
@@ -216,7 +285,6 @@ namespace To.Rpa.AppCapital.UserInterfaces
                                 //MARCAR ERROR 
                                 EhllapiWrapper.ReadScreen(1526, 70, out error);
                                 worksheet.SetValue(row, 8, "ERROR - " + error);
-                                //EhllapiWrapper.SendStr("@E");
                             }
 
                             if (worksheet.Cells[row + 1, 1].Value == null)
@@ -226,99 +294,17 @@ namespace To.Rpa.AppCapital.UserInterfaces
                         }
                         catch (Exception exc)
                         {
-                            //TODO: guardar log.
+                            //No está funcionando escribir en el excel.
                             worksheet.SetValue(row, 8, "ERROR");
                             Methods.LogProceso(" ERROR: " + exc.StackTrace + " " + MethodBase.GetCurrentMethod().Name);
+                            EhllapiWrapper.SendStr("@E");
+                            EhllapiWrapper.Wait();
                         }
                         finally { row++; }
 
                     } while (!prestamo.Equals(""));
+
                 }
-
-                //// Open the spreadsheet document for read-only access.
-                //using (SpreadsheetDocument document =
-                //SpreadsheetDocument.Open(@"d:\Users\juarui\Source\Repos\RPA\To.Rpa.AppCapital\DATA_PROCESO.xlsx", false))
-                //{
-                //    row1Col0 = GetCellValue(document, "DATA", "A2");
-                //    row1Col1 = GetCellValue(document, "DATA", "B2");
-                //    row1Col2 = GetCellValue(document, "DATA", "C2");
-                //    row1Col3 = GetCellValue(document, "DATA", "D2");
-                //    row1Col4 = GetCellValue(document, "DATA", "E2");
-                //    row1Col5 = GetCellValue(document, "DATA", "F2");
-                //    //row1Col5 = "2908070001210000";//dr[5].ToString();
-
-
-                //    EhllapiWrapper.SetCursorPos(1167);
-                //    EhllapiWrapper.SendStr(row1Col0);
-                //    EhllapiWrapper.SetCursorPos(1327);
-                //    EhllapiWrapper.SendStr("9999");
-                //    EhllapiWrapper.SendStr("@2");
-
-                //    EhllapiWrapper.SetCursorPos(244);
-                //    EhllapiWrapper.ReadScreen(244, 14, out capital);
-
-                //    Thread.Sleep(tiempo);
-
-                //    if (capital != null)
-                //    {
-                //        Thread.Sleep(tiempo);
-
-                //        EhllapiWrapper.SetCursorPos(575);
-                //        EhllapiWrapper.SendStr(row1Col1);
-                //        EhllapiWrapper.SendStr("@A@+");
-                //        EhllapiWrapper.SendStr("@T");
-
-                //        EhllapiWrapper.SetCursorPos(592);
-                //        EhllapiWrapper.SendStr(row1Col2);
-
-                //        EhllapiWrapper.SetCursorPos(595);
-                //        EhllapiWrapper.SendStr(row1Col3);
-
-                //        EhllapiWrapper.SetCursorPos(599);
-                //        EhllapiWrapper.SendStr(row1Col4);
-
-                //        EhllapiWrapper.SetCursorPos(603);
-                //        EhllapiWrapper.SendStr(row1Col5);
-
-                //        EhllapiWrapper.SetCursorPos(1682);
-                //        //TODO:CONTADOR
-                //        EhllapiWrapper.SendStr(row1Col0 + " / APLIC CAP  _" /*+ cont.ToString()*/);
-                //        EhllapiWrapper.SendStr("@b");
-                //        Thread.Sleep(tiempo);
-
-                //        EhllapiWrapper.SetCursorPos(899);
-                //        EhllapiWrapper.SendStr(".");
-                //        EhllapiWrapper.SendStr("@3");
-
-                //        //TODO: FALTA CONFIRMAR LA SALIDA CON F3 y el popup que sale... 
-
-
-                //        //                    //string newColumn = "H";
-                //        //                    //string newRow = "5";
-                //        //                    //string worksheet2 = "DATA";
-
-                //        //                    ////string sql2 = String.Format("UPDATE [{0}$] SET {1}{2}={3}", worksheet2, newColumn, newRow, "Hola");
-                //        //                    //string commandString = String.Format("UPDATE [{0}${1}{2}:{1}{2}] SET F1='{3}'", worksheet2, newColumn, newRow, 1);
-                //        //                    //OleDbCommand objCmdSelect = new OleDbCommand(commandString, connection);
-                //        //                    //objCmdSelect.ExecuteNonQuery();
-
-
-
-                //        //                    //COMANDOS PARA EL SIGUIENTE REGISTRO
-                //        //                    //MainFrameAdapter.SendKey(PcomKeys.PF7);
-                //        //                    //MainFrameAdapter.SetTextOnScreen(22, 7, "2");
-                //        //                    //MainFrameAdapter.SendKey(PcomKeys.Enter);
-
-                //        //PARA PASAR A OTRA OPERACIÓN
-                //        EhllapiWrapper.SendStr("@7");
-                //        EhllapiWrapper.SetCursorPos(1687);
-                //        EhllapiWrapper.SendStr("2");
-                //        EhllapiWrapper.SendStr("@E");
-                //    }
-
-
-                //}
-
             }
         }
 
