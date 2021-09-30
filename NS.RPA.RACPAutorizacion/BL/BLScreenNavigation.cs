@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using To.AtNinjas.Util;
 
-namespace NS.RPA.RACPAutorizacion.BL
+namespace NS.RPA.RACPAutorizacion
 {
     class BLScreenNavigation
     {
@@ -25,11 +25,31 @@ namespace NS.RPA.RACPAutorizacion.BL
 
 
 
-        public bool ShowScreenCPApproval(string loanNumber)
+        public bool ShowScreenCPApproval()
         {
+            string opt = ehllapi.ReadScreen("5,3", 25).Trim();
+            if (opt.Equals("1. Posición de cliente"))
+            {
+                Methods.LogProceso("El menú inicial es el definido: MGCIA2");
+            }
+            else
+            {
+                Methods.LogProceso("El menú inicial no es el definido, se aborta el RPA");
+                return false;
+            }
+
+            EhllapiWrapper.Wait();
+            Methods.GetMenuProgram("15,24");
+            EhllapiWrapper.Wait();
+
+            if (!ehllapi.ReadScreen("2,23", 32).Contains("Aprobación de Cambio de Producto"))
+            {
+                Methods.LogProceso("No se abrió correctamente la opción 'Aprobacion de Contratos y Transacciones'");
+                return false;
+            }
             return true;
         }
-        public bool ShowScreenRATransactionsApproval(string loanNumber)
+        public bool ShowScreenRATransactionsApproval()
         {
 
             //#if DEBUG
@@ -68,14 +88,9 @@ namespace NS.RPA.RACPAutorizacion.BL
 
         public void BackToMainMenu()
         {
-
-            ehllapi.SendStr("@v");
-
             ehllapi.SendStr("@7");
             EhllapiWrapper.Wait();
-            ehllapi.SendStr("@7");
-            EhllapiWrapper.Wait();
-            ehllapi.SendStr("@7");
+            ehllapi.SendStr("@3");
             EhllapiWrapper.Wait();
         }
     }

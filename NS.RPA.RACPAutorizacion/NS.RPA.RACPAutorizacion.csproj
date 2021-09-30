@@ -51,6 +51,8 @@
     <Compile Include="BL\BLMain.cs" />
     <Compile Include="BL\BLScreenNavigation.cs" />
     <Compile Include="AppRACPAutorizacion.cs" />
+    <Compile Include="Entity\ProductChange.cs" />
+    <Compile Include="Entity\RelationshipOwed.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

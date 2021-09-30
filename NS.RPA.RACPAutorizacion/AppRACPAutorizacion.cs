@@ -1,5 +1,4 @@
 ﻿using EHLLAPI;
-using NS.RPA.RACPAutorizacion.BL;
 using OfficeOpenXml;
 using System;
 using System.Collections.Generic;
@@ -7,6 +6,7 @@ using System.Configuration;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Security;
 using System.Text;
 using System.Threading.Tasks;
 using To.AtNinjas.Util;
@@ -19,17 +19,20 @@ namespace NS.RPA.RACPAutorizacion
         public static string MFEmulatorPath;
         public static string MFEmulatorProcessName;
         public static string SessionId;
-        public static string Username;
+        public static string AuthorizationPass;
+        //public static string Username;
         public static string Password;
         public string EmulatorURL;
 
         public static string MFTemplateLoad;
+        private string StationID { get; set; }
 
         private Dictionary<string, object> CurrentConfig { get; set; }
 
 
         private BLMain _blMain;
         private BLScreenNavigation _blScreenNavigation;
+
 
         public void Init()
         {
@@ -38,13 +41,32 @@ namespace NS.RPA.RACPAutorizacion
             EmulatorURL = ConfigurationManager.AppSettings["MFEmulatorPath"].ToString().Trim();
             //MFEmulatorProcessName = ConfigurationManager.AppSettings["MFEmulatorProcessName"].ToString().Trim();
             SessionId = ConfigurationManager.AppSettings["SessionId"].Trim().ToString();
-            Username = ConfigurationManager.AppSettings["MFUser"].ToString().Trim();
+            //Username = ConfigurationManager.AppSettings["MFUser"].ToString().Trim();
             Password = ConfigurationManager.AppSettings["MFPass"].ToString().Trim();
             MFTemplateLoad = ConfigurationManager.AppSettings["MFTemplateLoad"];
+            //Password = ConfigurationManager.AppSettings["Password"];
             //Paswrord_2 = ConfigurationManager.AppSettings["PasswordCreation"].ToString().Trim();
+            AuthorizationPass = ConfigurationManager.AppSettings["AuthorizationPass"];
 
             _blScreenNavigation = new BLScreenNavigation();
             _blMain = new BLMain();
+
+            _blMain.GetRelationshipOwedDataFromExcelConfig(MFTemplateLoad);
+            _blMain.GetProductChangeDataFromExcelConfig(MFTemplateLoad);
+#if !DEBUG
+            SetStationID();
+#endif
+        }
+
+        private void SetStationID()
+        {
+            string text = File.ReadAllText(EmulatorURL);
+
+            if (!StationID.Equals(""))
+            {
+                text = text.Replace("<StationID>", StationID);
+                File.WriteAllText(EmulatorURL, text);
+            }
         }
 
         public void DoActivities()
@@ -67,14 +89,7 @@ namespace NS.RPA.RACPAutorizacion
 #endif
                 if (Methods.OpenWS(EmulatorURL, SessionId, CurrentConfig["User"].ToString(), Password, out int Id) == true)
                 {
-                    Test2();
-                    //IBSPrestamoDelExterior loadOp = new IBSPrestamoDelExterior(SessionId, Password, _Id);
-                    //loadOp.PrestamoExteriorLoad(MFTemplateLoad, Paswrord_2);
-
-                    //Console.ReadKey();
-
-                    //IBSAutorizaPrestamoExterior loadAutorizacion = new IBSAutorizaPrestamoExterior(SessionId, Password, _Id);
-                    //loadAutorizacion.PrestamoAutorizacion(MFTemplateLoad);
+                    Base();
                 }
                 else { }
 
@@ -88,183 +103,72 @@ namespace NS.RPA.RACPAutorizacion
             }
         }
 
-        public void Test()
+        private void GetCredentials()
         {
+            Console.WriteLine("");
+            Console.WriteLine("Por favor, ingrese su usuario de IBS");
+            Console.WriteLine("");
+            Console.WriteLine("Luego, presione ENTER para continuar ... .");
 
-            FileInfo existingFile = new FileInfo(MFTemplateLoad);
-            using (ExcelPackage package = new ExcelPackage(existingFile))
-            {
-                //int rowLoad = 0;
-                string nroFinanciamiento = "", nroContratoAdeudado = "", msgErrorAdeudado = "";
+            CurrentConfig.Add("User", Console.ReadLine());
 
-                ExcelWorksheet worksheet = package.Workbook.Worksheets[1];
-                int rowCount = worksheet.Dimension.End.Row;
+            Console.WriteLine("");
+            Console.WriteLine("Por favor, ingrese el password de IBS");
+            Console.WriteLine("Luego, presione ENTER para continuar ... .");
 
-                //                Methods.LogProceso("INICIA PROCESO DE DESCARGA DE FINANCIAMIENTOS" + "\n " + "con lecctura de excel.... " + TemplateLoad);
+            Console.WriteLine("");
+            Console.WriteLine("NOTA: Considerar que el password ingresado, se utilizará encriptado, " +
+                "por lo que NO se almacenará y ni la aplicación conocerá su valor.");
 
-                //                string patron = @"[^\d+]";
-                //                Regex regex = new Regex(patron);
-
-                //                for (rowLoad = 2; rowLoad <= rowCount; rowLoad++)
-                //                {
-                //                    try
-                //                    {
-                //                        NroFinanciamiento = worksheet_load.Cells["A" + rowLoad].Value == null ? "" : worksheet_load.Cells["A" + rowLoad].Value.ToString().Trim();
-                //                        NroFinanciamiento = regex.Replace(NroFinanciamiento, "");
-
-                //                        if (NroFinanciamiento.Equals(""))
-                //                        {
-                //                            break;
-                //                        }
-
-                //                        NroContratoAdeudado = worksheet_load.Cells["B" + rowLoad].Value == null ? "" : worksheet_load.Cells["B" + rowLoad].Value.ToString().Trim();
-                //                        NroContratoAdeudado = regex.Replace(NroContratoAdeudado, "");
-
-                //                        Console.WriteLine("+++++++++ NroFinanciamiento+++:: " + NroFinanciamiento);
-                //                        Console.WriteLine("+++++++++ NroContratoAdeudado+++:: " + NroContratoAdeudado);
-
-                //                        ehllapi.SetCursorPos("15,47");
-
-                //#if DEBUG
-                //                        //***** Para Desarrollo**************************************
-
-                //                        var subProducto = "";
-                //                        subProducto = ehllapi.ReadScreen("6,47", 4).Trim();
-
-                //                        if (subProducto.Equals(""))
-                //                        {
-                //                            ehllapi.SetCursorPos("6,47");
-                //                            ehllapi.SendStr("@a");
-                //                            EhllapiWrapper.Wait();
-
-                //                            ehllapi.SetCursorPos("12,25");
-                //                            ehllapi.SendStr("FEXP");
-                //                            for (int i = 0; i < 11; i++)
-                //                            {
-                //                                ehllapi.SendStr("@v");
-                //                                EhllapiWrapper.Wait();
-                //                            }
-
-                //                            ehllapi.SetCursorPos("15,71");
-                //                            ehllapi.SendStr("X");
-                //                            ehllapi.SendStr("@E");
-                //                            EhllapiWrapper.Wait();
-                //                            //***********************************************************
-                //                        }
-                //#endif
-                //                        ehllapi.SetCursorPos("15,47");
-                //                        ehllapi.SendStr("@F");
-                //                        ehllapi.SendStr(NroFinanciamiento.Trim());
-                //                        ehllapi.SendStr("@A@+");
-                //                        //ehllapi.SendStr("@E");
-                //                        EhllapiWrapper.Wait();
-
-                //                        ehllapi.SetCursorPos("17,47");
-                //                        ehllapi.SendStr(Paswrord_2.Trim());
-                //                        ehllapi.SendStr("@E");
-                //                        EhllapiWrapper.Wait();
-
-                //                        // Nro de Contrato Adeudado
-                //                        ehllapi.SetCursorPos("20,68");
-                //                        ehllapi.SendStr("@F");
-                //                        ehllapi.SendStr(NroContratoAdeudado);
-
-                //                        ehllapi.SendStr("@E"); // Intro
-                //                        EhllapiWrapper.Wait();
-
-                //                        msgErrorAdeudado = ehllapi.ReadScreen("5,7", 15).Trim();
-                //                        if (msgErrorAdeudado.Trim().Equals("Dato no Valido"))
-                //                        {
-                //                            worksheet_load.Cells["C" + rowLoad].Value = "ERROR_" + msgErrorAdeudado.Trim();
-                //                            ehllapi.SendStr("@E"); // Intro
-                //                            EhllapiWrapper.Wait();
-                //                        }
-                //                        else
-                //                        {
-                //                            worksheet_load.Cells["C" + rowLoad].Value = "CARGADO";
-                //                        }
-
-                //                        ehllapi.SendStr("@1"); // F1
-                //                        EhllapiWrapper.Wait();
-
-                //                        //**************
-                //                        //ehllapi.SendStr("@7"); // F7
-                //                        //EhllapiWrapper.Wait();
-                //                        //**************
-
-                //#if DEBUG
-                //                        // Esto se debe quitar es de prueba
-                //                        ehllapi.SendStr("@1"); // F1
-                //                        EhllapiWrapper.Wait();
-                //#endif
-                //                        ehllapi.SendStr("@6"); // F6
-                //                        EhllapiWrapper.Wait();
-
-                //                        ehllapi.SendStr("@3"); //F3
-                //                        EhllapiWrapper.Wait();
-
-                //                        NroFinanciamiento = ""; NroContratoAdeudado = ""; msgErrorAdeudado = "";
-                //                        package.Save();
-
-                //                    }
-                //                    catch (Exception ex)
-                //                    {
-                //                        Methods.LogProceso("ERROR: " + ex.Message);
-                //                    }
-
-            } // END for1
-
+            CurrentConfig.Add("Password", GetPassword());
+            Console.WriteLine("");
         }
 
-        public void Test2()
+        public SecureString GetPassword()
+        {
+            var pwd = new SecureString();
+            while (true)
+            {
+                ConsoleKeyInfo i = Console.ReadKey(true);
+                if (i.Key == ConsoleKey.Enter)
+                {
+                    break;
+                }
+                else if (i.Key == ConsoleKey.Backspace)
+                {
+                    if (pwd.Length > 0)
+                    {
+                        pwd.RemoveAt(pwd.Length - 1);
+                        Console.Write("\b \b");
+                    }
+                }
+                else if (i.KeyChar != '\u0000') // KeyChar == '\u0000' if the key pressed does not correspond to a printable character, e.g. F1, Pause-Break, etc
+                {
+                    pwd.AppendChar(i.KeyChar);
+                    Console.Write("*");
+                }
+            }
+            return pwd;
+        }
+
+        public void Base()
         {
             //for ??
 
-            if (_blScreenNavigation.ShowScreenRATransactionsApproval(""))
+            if (_blScreenNavigation.ShowScreenRATransactionsApproval())
             {
-                _blMain.SetApprovalPass("8998");
+                _blMain.SetApprovalPass(AuthorizationPass);
 
-                //_bLLoanPaymentMovement
-                var loanPaymentMovements = _blMain.SetDataFromScreenList(_blMain.GetLoanPaymentMovement, 7, 12, 2, _blMain.ReadScreen);
+                var relationshipOweds = _blMain.SetDataFromScreenList(_blMain.GetRelationshipOwed, 7, 14, 1, _blMain.ReadScreen);
 
-                /*
-                _blScreenNavigation.ShowScreenClientLoanPaymentMovements();
-
-                loanPaymentMovements = _blMain.SetDataFromScreenList(_bLLoanPaymentMovement.GetLoanPaymentMovement, 7, 12, 2, _blMain.ReadScreen);
-
-                _blMain.UpdateToNegativeAmount(loanPaymentMovements);
-
-                groupedLoanPaymentMovements = _bLLoanPaymentMovement.GetGroupedLoanPaymentMovements(loanPaymentMovements);
-
-                _blLoanDebitBalance.Save(newLoan, groupedLoanPaymentMovements);
-
-                */
-                _blScreenNavigation.BackToMainMenu();
-
-                //loanPaymentMovements = _blMain.GetDataFromScreenList(_bLLoanPaymentMovement.GetLoanPaymentMovement, 7, 12, 2, _blMain.ReadScreen);
+                _blScreenNavigation.BackToMainMenu();                
             }
 
-
-            if (_blScreenNavigation.ShowScreenCPApproval(""))
+            if (_blScreenNavigation.ShowScreenCPApproval())
             {
-                //_bLLoanPaymentMovement
-                var loanPaymentMovements = _blMain.SetDataFromScreenList(_blMain.GetLoanPaymentMovement, 7, 12, 2, _blMain.ReadScreen);
-
-                /*
-                _blScreenNavigation.ShowScreenClientLoanPaymentMovements();
-
-                loanPaymentMovements = _blMain.SetDataFromScreenList(_bLLoanPaymentMovement.GetLoanPaymentMovement, 7, 12, 2, _blMain.ReadScreen);
-
-                _blMain.UpdateToNegativeAmount(loanPaymentMovements);
-
-                groupedLoanPaymentMovements = _bLLoanPaymentMovement.GetGroupedLoanPaymentMovements(loanPaymentMovements);
-
-                _blLoanDebitBalance.Save(newLoan, groupedLoanPaymentMovements);
-
-                */
+                var relationshipOweds = _blMain.SetDataFromScreenList(_blMain.GetRelationshipOwed, 7, 14, 1, _blMain.ReadScreen);
+              
                 _blScreenNavigation.BackToMainMenu();
-
-                //loanPaymentMovements = _blMain.GetDataFromScreenList(_bLLoanPaymentMovement.GetLoanPaymentMovement, 7, 12, 2, _blMain.ReadScreen);
             }
 
         }
