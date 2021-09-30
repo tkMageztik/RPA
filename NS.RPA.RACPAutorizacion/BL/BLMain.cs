@@ -22,6 +22,7 @@ namespace NS.RPA.RACPAutorizacion
 
         private List<RelationshipOwed> RelationshipOweds { get; set; }
         private List<ProductChange> ProductChanges { get; set; }
+        private List<ClientCode> ClientCodes { get; set; }
 
         public void GetRelationshipOwedDataFromExcelConfig(string excelPath)
         {
@@ -83,20 +84,20 @@ namespace NS.RPA.RACPAutorizacion
 
         public void GetProductChangeDataFromExcelConfig(string excelPath)
         {
-            List<RelationshipOwed> lstRelationshipOwedData = null;
+            List<ProductChange> lstProductChangeData = null;
             try
             {
                 using (var package = new ExcelPackage(new FileInfo(excelPath)))
                 {
                     var workbook = package.Workbook;
 
-                    var worksheet = workbook.Worksheets[1];
+                    var worksheet = workbook.Worksheets["APROBACIÓN"];
                     var totalRow = worksheet.Dimension.End.Row;
 
                     //string patron = @"[^\d+]";
                     //Regex regex = new Regex(patron);
 
-                    lstRelationshipOwedData = new List<RelationshipOwed>();
+                    lstProductChangeData = new List<ProductChange>();
 
                     for (int i = 2; i <= totalRow; i++)
                     {
@@ -104,26 +105,26 @@ namespace NS.RPA.RACPAutorizacion
                         //    worksheet.Cells["D" + i].Value != null && worksheet.Cells["E" + i].Value != null &&
                         //    worksheet.Cells["F" + i].Value != null)
                         if (!String.IsNullOrEmpty(Convert.ToString(worksheet.Cells["A" + i].Value).Trim()) &&
-                            !String.IsNullOrEmpty(Convert.ToString(worksheet.Cells["B" + i].Value).Trim()))
+                            !String.IsNullOrEmpty(Convert.ToString(worksheet.Cells["C" + i].Value).Trim()))
                         {
-                            if (Convert.ToString(worksheet.Cells["C" + i].Value).Trim() == "CARGADO")
+                            if (Convert.ToString(worksheet.Cells["E" + i].Value).Trim() == "CARGADO")
                             {
-                                RelationshipOwed relationshipOwedData = new RelationshipOwed()
+                                ProductChange productChangeData = new ProductChange()
                                 {
-                                    ContractNumberDue = (worksheet.Cells["B" + i].Value ?? "").ToString().Trim(),
-                                    FundingNumber = (worksheet.Cells["A" + i].Value ?? "").ToString().Trim()
+                                    FundingNumber = (worksheet.Cells["A" + i].Value ?? "").ToString().Trim(),
+                                    Product = (worksheet.Cells["C" + i].Value ?? "").ToString().Trim()
                                 };
 
-                                lstRelationshipOwedData.Add(relationshipOwedData);
+                                lstProductChangeData.Add(productChangeData);
                             }
                         }
                         else
                         {
-                            RelationshipOwed relationshipOwedData = new RelationshipOwed()
+                            ProductChange productChangeData = new ProductChange()
                             {
                                 State = "ERROR"
                             };
-                            lstRelationshipOwedData.Add(relationshipOwedData);
+                            lstProductChangeData.Add(productChangeData);
                         }
                     }
                 }
@@ -135,7 +136,25 @@ namespace NS.RPA.RACPAutorizacion
                 //TODO: especificar error que no se ha leído correctamente el archivo de configuracón disbursement config
                 //Methods.LogProceso(e.ToString());
             }
-            RelationshipOweds = lstRelationshipOwedData;
+            ProductChanges = lstProductChangeData;
+        }
+
+        public void UpdateCompanySize()
+        {
+            if (ClientCodes == null) return;
+
+            foreach (ProductChange product in ProductChanges)
+            {
+                ClientCode e = ClientCodes.FirstOrDefault(x =>product.FundingNumber  == x.FundingNumber);
+
+                //if (product.)
+            }
+        }
+
+        public void GetClientCodeDataFromExcelConfig(string excelPath)
+        {
+            ClientCodes = null;
+
         }
 
         public List<T> GetDataFromScreenList<T>(Func<string, T> formatMethod, int startYCoordenates,
@@ -348,7 +367,7 @@ namespace NS.RPA.RACPAutorizacion
 
             e.Plot = plot;
             return e;
-        } 
+        }
 
         public ProductChange GetProductChange(string plot, int yCoordenates)
         {

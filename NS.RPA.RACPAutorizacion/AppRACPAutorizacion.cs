@@ -52,7 +52,11 @@ namespace NS.RPA.RACPAutorizacion
             _blMain = new BLMain();
 
             _blMain.GetRelationshipOwedDataFromExcelConfig(MFTemplateLoad);
+
+
+            _blMain.GetClientCodeDataFromExcelConfig(MFTemplateLoad);
             _blMain.GetProductChangeDataFromExcelConfig(MFTemplateLoad);
+
 #if !DEBUG
             SetStationID();
 #endif
@@ -164,9 +168,15 @@ namespace NS.RPA.RACPAutorizacion
                 _blScreenNavigation.BackToMainMenu();                
             }
 
+            if (_blScreenNavigation.ShowScreenClientPosition())
+            {
+                _blMain.UpdateCompanySize();
+                _blScreenNavigation.BackToMainMenu2();
+            }
+
             if (_blScreenNavigation.ShowScreenCPApproval())
             {
-                var relationshipOweds = _blMain.SetDataFromScreenList(_blMain.GetRelationshipOwed, 7, 14, 1, _blMain.ReadScreen);
+                var productChanges = _blMain.SetDataFromScreenList(_blMain.GetProductChange, 7, 14, 1, _blMain.ReadScreen);
               
                 _blScreenNavigation.BackToMainMenu();
             }
