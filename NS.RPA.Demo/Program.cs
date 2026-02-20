@@ -1,37 +1,37 @@
 using System;
 using System.Diagnostics;
-using System.Threading;
-using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Input;
+using FlaUI.Core.Tools;
 using FlaUI.UIA3;
 
 namespace NS.RPA.Demo
 {
     class Program
     {
-        private const int CalculatorLoadDelayMs = 2000;
-
         static void Main(string[] args)
         {
             // Launch calc.exe (on Windows 10+ this starts the UWP Calculator)
             Process.Start("calc.exe");
 
-            // Give the calculator time to fully load
-            Thread.Sleep(CalculatorLoadDelayMs);
-
             using var automation = new UIA3Automation();
 
-            // Find the Calculator process (UWP app on Windows 10+ is "CalculatorApp")
-            var calcProcesses = Process.GetProcessesByName("CalculatorApp");
-            if (calcProcesses.Length == 0)
-                calcProcesses = Process.GetProcessesByName("Calculator");
+            // Wait automatically for the Calculator process to appear — no hard-coded delay needed
+            var calcProcess = Retry.WhileNull(
+                () =>
+                {
+                    var procs = Process.GetProcessesByName("CalculatorApp");
+                    if (procs.Length == 0)
+                        procs = Process.GetProcessesByName("Calculator");
+                    return procs.Length > 0 ? procs[0] : null;
+                },
+                TimeSpan.FromSeconds(30),
+                throwOnTimeout: true,
+                timeoutMessage: "Calculator process did not start within 30 seconds.");
 
-            if (calcProcesses.Length == 0)
-                throw new InvalidOperationException("Calculator process not found. Make sure calc.exe is running.");
+            var app = FlaUI.Core.Application.Attach(calcProcess);
 
-            var app = FlaUI.Core.Application.Attach(calcProcesses[0]);
-
-            var mainWindow = app.GetMainWindow(automation);
+            // Wait for the main window to be ready (FlaUI polls internally until the timeout)
+            var mainWindow = app.GetMainWindow(automation, TimeSpan.FromSeconds(30));
 
             // Focus the window before typing
             mainWindow.Focus();
