@@ -12,6 +12,9 @@ namespace NS.RPA.Demo
 {
     class Program
     {
+        // Generic UWP host process — UWP apps are rendered inside this Win32 host.
+        private const string UwpHostProcessName = "ApplicationFrameHost";
+
         // Pre-built indent strings to avoid per-call allocations during deep tree traversal.
         private static readonly string[] IndentCache = BuildIndentCache(20);
         private static string[] BuildIndentCache(int size)
@@ -88,64 +91,184 @@ namespace NS.RPA.Demo
 
         /// <summary>
         /// Attaches to an already-running instance of the target application, or launches it from
-        /// the given path and waits reactively until its process and main window are ready.
-        /// Returns both the FlaUI Application handle and the ready main window element so callers
-        /// do not need to call GetMainWindow a second time.
+        /// the given path and waits reactively until its main window is ready.
+        /// Uses a multi-strategy window search that handles Win32, PowerBuilder, and UWP apps.
         /// </summary>
         /// <param name="appPath">Full path or bare executable name (e.g. "C:\Apps\MyApp.exe" or "calc.exe").</param>
-        /// <param name="automation">The UIA3 automation instance used to locate the main window.</param>
+        /// <param name="automation">The UIA3 automation instance used to locate windows.</param>
         /// <returns>A tuple containing the attached <see cref="Application"/> and its ready <see cref="Window"/> main window.</returns>
         static (Application app, Window mainWindow) GetOrLaunchApp(string appPath, UIA3Automation automation)
         {
             string processName = Path.GetFileNameWithoutExtension(appPath);
-            Log($"Looking for running process '{processName}'...");
+            Log($"Searching for existing window of '{processName}' using multi-strategy approach...");
 
-            var runningProcesses = Process.GetProcessesByName(processName);
-
-            Application app;
-            if (runningProcesses.Length > 0)
+            var existingWindow = FindWindowMultiStrategy(processName, automation);
+            if (existingWindow != null)
             {
-                Log($"Process '{processName}' is already running (PID {runningProcesses[0].Id}) — attaching to existing instance.");
-                app = Application.Attach(runningProcesses[0]);
+                Log($"Application is already running — attaching to existing window.");
+                var existingProcess = Process.GetProcessById((int)existingWindow.Properties.ProcessId.Value);
+                return (Application.Attach(existingProcess), existingWindow);
             }
-            else
+
+            Log($"No existing window found — launching '{appPath}'...");
+            try
             {
-                Log($"Process '{processName}' not running — launching '{appPath}'...");
+                Process.Start(appPath);
+                Log($"Launch command issued for '{appPath}'.");
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to launch '{appPath}'. Verify the path is correct and accessible.", ex);
+            }
+
+            // Wait reactively using the same multi-strategy search — this handles UWP apps
+            // (where calc.exe exits immediately and CalculatorApp.exe appears later) and any
+            // other case where the process name differs from the executable used to launch.
+            Log($"Waiting for window of '{processName}' to appear (multi-strategy)...");
+            var retryResult = Retry.WhileNull(
+                () => FindWindowMultiStrategy(processName, automation),
+                TimeSpan.FromSeconds(30),
+                throwOnTimeout: true,
+                timeoutMessage: $"Window for '{processName}' did not appear within 30 seconds.");
+
+            // throwOnTimeout:true guarantees Result is non-null here.
+            var mainWindow = retryResult.Result!;
+            var launchedProcess = Process.GetProcessById((int)mainWindow.Properties.ProcessId.Value);
+            Log($"Window is ready — PID {launchedProcess.Id}, ProcessName '{launchedProcess.ProcessName}'.");
+
+            return (Application.Attach(launchedProcess), mainWindow);
+        }
+
+        /// <summary>
+        /// Finds the main window of a target application using three strategies in order.
+        /// Returns null if no matching window is found on this attempt (caller should retry).
+        /// </summary>
+        /// <param name="processName">Executable name without extension (e.g. "calc", "MyPBApp").</param>
+        /// <param name="automation">The UIA3 automation instance.</param>
+        /// <returns>The matching <see cref="Window"/>, or null if not found.</returns>
+        static Window? FindWindowMultiStrategy(string processName, UIA3Automation automation)
+        {
+            // ── Strategy 1: Exact process name ─────────────────────────────────────────
+            // Works for: Win32 apps, PowerBuilder, classic .NET WinForms/WPF, and
+            // UWP apps that have their own process (e.g. CalculatorApp).
+            var procs = Process.GetProcessesByName(processName);
+            foreach (var proc in procs)
+            {
                 try
                 {
-                    Process.Start(appPath);
-                    Log($"Launch command issued for '{appPath}'.");
-                }
-                catch (Exception ex)
-                {
-                    throw new InvalidOperationException(
-                        $"Failed to launch '{appPath}'. Verify the path is correct and accessible.", ex);
-                }
-
-                Log($"Waiting for process '{processName}' to appear in the process list...");
-                var retryResult = Retry.WhileNull(
-                    () =>
+                    var app = Application.Attach(proc);
+                    var win = app.GetMainWindow(automation);
+                    if (win != null)
                     {
-                        var procs = Process.GetProcessesByName(processName);
-                        return procs.Length > 0 ? procs[0] : null;
-                    },
-                    TimeSpan.FromSeconds(30),
-                    throwOnTimeout: true,
-                    timeoutMessage: $"Process '{processName}' did not appear within 30 seconds.");
-
-                // throwOnTimeout:true guarantees Result is non-null here; the ! suppresses the nullable warning.
-                var launchedProcess = retryResult.Result!;
-                Log($"Process '{processName}' is now running (PID {launchedProcess.Id}).");
-                app = Application.Attach(launchedProcess);
+                        Log($"[Strategy 1 - Exact process] Found '{processName}' (PID {proc.Id}).");
+                        DetectAndLogAppType(win);
+                        return win;
+                    }
+                }
+                catch (Exception ex) { Log($"[Strategy 1] Skipping PID {proc.Id}: {ex.Message}"); }
             }
 
-            Log("Waiting for the main window to become ready...");
-            var mainWindow = app.GetMainWindow(automation, TimeSpan.FromSeconds(30));
-            if (mainWindow == null)
-                throw new InvalidOperationException($"Main window of '{processName}' was not found within 30 seconds.");
-            Log($"Main window ready — Title: '{mainWindow.Title}', Handle: {mainWindow.Properties.NativeWindowHandle.Value}");
+            // ── Strategy 2: UWP ApplicationFrameHost ──────────────────────────────────
+            // UWP apps (like Calculator on Windows 10/11) are visually hosted inside
+            // ApplicationFrameHost.exe. The window title or ClassName often contains
+            // the original process name as a hint.
+            var hostProcs = Process.GetProcessesByName(UwpHostProcessName);
+            foreach (var hostProc in hostProcs)
+            {
+                try
+                {
+                    var hostApp = Application.Attach(hostProc);
+                    foreach (var win in hostApp.GetAllTopLevelWindows(automation))
+                    {
+                        string title = win.Title ?? "";
+                        string className = win.Properties.ClassName.IsSupported
+                            ? (win.Properties.ClassName.Value ?? "")
+                            : "";
 
-            return (app, mainWindow);
+                        // Title substring match is intentional: "calc" matches "Calculator".
+                        // Strategy 3 does exact process-name matching as a more precise fallback.
+                        if (title.IndexOf(processName, StringComparison.OrdinalIgnoreCase) >= 0
+                            || className.IndexOf(processName, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            Log($"[Strategy 2 - UWP host] Found in '{UwpHostProcessName}' — Title: '{title}', Class: '{className}'.");
+                            DetectAndLogAppType(win);
+                            return win;
+                        }
+                    }
+                }
+                catch (Exception ex) { Log($"[Strategy 2] Skipping UWP host PID {hostProc.Id}: {ex.Message}"); }
+            }
+
+            // ── Strategy 3: Full desktop scan ─────────────────────────────────────────
+            // Last resort: enumerate ALL top-level windows on the desktop and look for
+            // one whose owning process name matches. Covers edge cases such as shell-
+            // launched apps, wrapper executables, or apps with unusual process names.
+            // Terminates as soon as the first match is found (early return inside loop).
+            try
+            {
+                var desktop = automation.GetDesktop();
+                foreach (var child in desktop.FindAllChildren())
+                {
+                    try
+                    {
+                        var win = child.AsWindow();
+                        if (win == null) continue;
+
+                        var pid = (int)win.Properties.ProcessId.Value;
+                        var proc = Process.GetProcessById(pid);
+
+                        if (proc.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            Log($"[Strategy 3 - Desktop scan] Found window owned by process '{proc.ProcessName}' (PID {pid}).");
+                            DetectAndLogAppType(win);
+                            return win;
+                        }
+                    }
+                    catch (Exception ex) { Log($"[Strategy 3] Skipping desktop child: {ex.Message}"); }
+                }
+            }
+            catch (Exception ex) { Log($"[Strategy 3] Desktop scan failed: {ex.Message}"); }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Reads the window ClassName to detect and log the type of application framework.
+        /// Helps identify UWP, PowerBuilder, WinForms, WPF, Electron, or classic Win32.
+        /// </summary>
+        static void DetectAndLogAppType(Window window)
+        {
+            try
+            {
+                string className = window.Properties.ClassName.IsSupported
+                    ? (window.Properties.ClassName.Value ?? "")
+                    : "";
+
+                string appType;
+                if (className.Contains("ApplicationFrameWindow") || className.Contains("Windows.UI.Core"))
+                    appType = "UWP (Modern Windows App)";
+                else if (className.StartsWith("pbframe", StringComparison.OrdinalIgnoreCase)
+                         || className.StartsWith("PBGUI", StringComparison.OrdinalIgnoreCase)
+                         || className.StartsWith("PBGUIObject", StringComparison.OrdinalIgnoreCase))
+                    appType = "PowerBuilder";
+                else if (className.Contains("WindowsForms"))
+                    appType = "Windows Forms (.NET)";
+                else if (className.Contains("HwndWrapper") || className.Contains("HwndSource"))
+                    appType = "WPF (.NET)";
+                else if (className.StartsWith("Chrome_", StringComparison.OrdinalIgnoreCase)
+                         || className.Contains("Electron"))
+                    appType = "Electron / Chrome-based";
+                else
+                    appType = "Win32 / Classic";
+
+                Log($"Detected app type: {appType}");
+                Log($"Window ClassName : '{className}'");
+            }
+            catch (Exception ex)
+            {
+                Log($"Could not detect app type: {ex.Message}");
+            }
         }
 
         // ─── Demo mode (keyboard input) ───────────────────────────────────────────────
