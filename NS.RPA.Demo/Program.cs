@@ -94,8 +94,8 @@ namespace NS.RPA.Demo
         /// </summary>
         /// <param name="appPath">Full path or bare executable name (e.g. "C:\Apps\MyApp.exe" or "calc.exe").</param>
         /// <param name="automation">The UIA3 automation instance used to locate the main window.</param>
-        /// <returns>A tuple containing the attached <see cref="Application"/> and its ready <see cref="AutomationElement"/> main window.</returns>
-        static (Application app, AutomationElement mainWindow) GetOrLaunchApp(string appPath, UIA3Automation automation)
+        /// <returns>A tuple containing the attached <see cref="Application"/> and its ready <see cref="Window"/> main window.</returns>
+        static (Application app, Window mainWindow) GetOrLaunchApp(string appPath, UIA3Automation automation)
         {
             string processName = Path.GetFileNameWithoutExtension(appPath);
             Log($"Looking for running process '{processName}'...");
@@ -123,7 +123,7 @@ namespace NS.RPA.Demo
                 }
 
                 Log($"Waiting for process '{processName}' to appear in the process list...");
-                var launchedProcess = Retry.WhileNull(
+                var retryResult = Retry.WhileNull(
                     () =>
                     {
                         var procs = Process.GetProcessesByName(processName);
@@ -133,12 +133,16 @@ namespace NS.RPA.Demo
                     throwOnTimeout: true,
                     timeoutMessage: $"Process '{processName}' did not appear within 30 seconds.");
 
+                // throwOnTimeout:true guarantees Result is non-null here; the ! suppresses the nullable warning.
+                var launchedProcess = retryResult.Result!;
                 Log($"Process '{processName}' is now running (PID {launchedProcess.Id}).");
                 app = Application.Attach(launchedProcess);
             }
 
             Log("Waiting for the main window to become ready...");
             var mainWindow = app.GetMainWindow(automation, TimeSpan.FromSeconds(30));
+            if (mainWindow == null)
+                throw new InvalidOperationException($"Main window of '{processName}' was not found within 30 seconds.");
             Log($"Main window ready — Title: '{mainWindow.Title}', Handle: {mainWindow.Properties.NativeWindowHandle.Value}");
 
             return (app, mainWindow);
@@ -151,7 +155,7 @@ namespace NS.RPA.Demo
         /// This is the original calculator demo preserved as its own method.
         /// </summary>
         /// <param name="mainWindow">The ready main window element returned by <see cref="GetOrLaunchApp"/>.</param>
-        static void RunCalcDemo(AutomationElement mainWindow)
+        static void RunCalcDemo(Window mainWindow)
         {
             Log("--- Starting keyboard demo ---");
 
@@ -189,7 +193,7 @@ namespace NS.RPA.Demo
         /// any application (including PowerBuilder) FlaUI can see and interact with.
         /// </summary>
         /// <param name="mainWindow">The ready main window element returned by <see cref="GetOrLaunchApp"/>.</param>
-        static void RunPocInspector(AutomationElement mainWindow)
+        static void RunPocInspector(Window mainWindow)
         {
             Log("--- Starting POC UI tree inspection ---");
             Log("This mode prints every accessible UI Automation element in the main window.");
