@@ -1,6 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
+using FlaUI.Core;
+using FlaUI.Core.AutomationElements;
 using FlaUI.Core.Input;
 using FlaUI.Core.Tools;
 using FlaUI.UIA3;
@@ -9,46 +12,117 @@ namespace NS.RPA.Demo
 {
     class Program
     {
-        static void Main(string[] args)
+        // Pre-built indent strings to avoid per-call allocations during deep tree traversal.
+        private static readonly string[] IndentCache = BuildIndentCache(20);
+        private static string[] BuildIndentCache(int size)
         {
-            // The application path can be a full path (e.g. "C:\Apps\MyPBApp.exe") or just an
-            // executable name (e.g. "calc.exe"). Defaults to "calc.exe" when no argument is given.
-            string appPath = args.Length > 0 ? args[0] : "calc.exe";
+            var cache = new string[size];
+            for (int i = 0; i < size; i++) cache[i] = new string(' ', i * 2);
+            return cache;
+        }
+        static string Indent(int level) => level < IndentCache.Length ? IndentCache[level] : new string(' ', level * 2);
 
-            if (string.IsNullOrWhiteSpace(appPath))
-                throw new ArgumentException("Application path must not be empty.", nameof(args));
+        // ─── Logging ─────────────────────────────────────────────────────────────────
 
-            // Derive the process name from the executable file name (without extension),
-            // which is what Process.GetProcessesByName expects.
+        static void Log(string message)
+        {
+            Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [INFO ] {message}");
+        }
+
+        static void LogError(string message, Exception? ex = null)
+        {
+            string ts = DateTime.Now.ToString("HH:mm:ss.fff");
+            Console.Error.WriteLine($"[{ts}] [ERROR] {message}");
+            if (ex != null)
+            {
+                Console.Error.WriteLine($"[{ts}] [ERROR] Exception type : {ex.GetType().FullName}");
+                Console.Error.WriteLine($"[{ts}] [ERROR] Message        : {ex.Message}");
+                Console.Error.WriteLine($"[{ts}] [ERROR] Stack trace    :\n{ex.StackTrace}");
+                if (ex.InnerException != null)
+                    Console.Error.WriteLine($"[{ts}] [ERROR] Inner exception: {ex.InnerException.Message}");
+            }
+        }
+
+        // ─── Entry point ─────────────────────────────────────────────────────────────
+
+        static int Main(string[] args)
+        {
+            try
+            {
+                string appPath = "calc.exe";
+                bool pocMode = false;
+
+                foreach (var arg in args)
+                {
+                    if (arg.Equals("--poc", StringComparison.OrdinalIgnoreCase))
+                        pocMode = true;
+                    else
+                        appPath = arg;
+                }
+
+                if (string.IsNullOrWhiteSpace(appPath))
+                    throw new ArgumentException("Application path must not be empty.");
+
+                Log($"Mode        : {(pocMode ? "POC Inspector" : "Demo (keyboard)")}");
+                Log($"Application : {appPath}");
+
+                using var automation = new UIA3Automation();
+
+                var (_, mainWindow) = GetOrLaunchApp(appPath, automation);
+
+                if (pocMode)
+                    RunPocInspector(mainWindow);
+                else
+                    RunCalcDemo(mainWindow);
+
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                LogError("Unhandled exception — automation aborted.", ex);
+                return 1;
+            }
+        }
+
+        // ─── App connection ───────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Attaches to an already-running instance of the target application, or launches it from
+        /// the given path and waits reactively until its process and main window are ready.
+        /// Returns both the FlaUI Application handle and the ready main window element so callers
+        /// do not need to call GetMainWindow a second time.
+        /// </summary>
+        /// <param name="appPath">Full path or bare executable name (e.g. "C:\Apps\MyApp.exe" or "calc.exe").</param>
+        /// <param name="automation">The UIA3 automation instance used to locate the main window.</param>
+        /// <returns>A tuple containing the attached <see cref="Application"/> and its ready <see cref="AutomationElement"/> main window.</returns>
+        static (Application app, AutomationElement mainWindow) GetOrLaunchApp(string appPath, UIA3Automation automation)
+        {
             string processName = Path.GetFileNameWithoutExtension(appPath);
+            Log($"Looking for running process '{processName}'...");
 
-            using var automation = new UIA3Automation();
-
-            // Check whether the application is already running.
             var runningProcesses = Process.GetProcessesByName(processName);
 
-            FlaUI.Core.Application app;
+            Application app;
             if (runningProcesses.Length > 0)
             {
-                // Attach to the already-running instance instead of opening a second one.
-                Console.WriteLine($"'{processName}' is already running — attaching to existing instance.");
-                app = FlaUI.Core.Application.Attach(runningProcesses[0]);
+                Log($"Process '{processName}' is already running (PID {runningProcesses[0].Id}) — attaching to existing instance.");
+                app = Application.Attach(runningProcesses[0]);
             }
             else
             {
-                // Launch the application from the provided path.
-                Console.WriteLine($"Launching '{appPath}'...");
+                Log($"Process '{processName}' not running — launching '{appPath}'...");
                 try
                 {
                     Process.Start(appPath);
+                    Log($"Launch command issued for '{appPath}'.");
                 }
                 catch (Exception ex)
                 {
                     throw new InvalidOperationException(
-                        $"Failed to launch '{appPath}'. Verify the path is correct and accessible. Details: {ex.Message}", ex);
+                        $"Failed to launch '{appPath}'. Verify the path is correct and accessible.", ex);
                 }
 
-                // Wait reactively until the process appears — no hard-coded delay needed.
+                Log($"Waiting for process '{processName}' to appear in the process list...");
                 var launchedProcess = Retry.WhileNull(
                     () =>
                     {
@@ -57,32 +131,115 @@ namespace NS.RPA.Demo
                     },
                     TimeSpan.FromSeconds(30),
                     throwOnTimeout: true,
-                    timeoutMessage: $"Process '{processName}' did not start within 30 seconds.");
+                    timeoutMessage: $"Process '{processName}' did not appear within 30 seconds.");
 
-                app = FlaUI.Core.Application.Attach(launchedProcess);
+                Log($"Process '{processName}' is now running (PID {launchedProcess.Id}).");
+                app = Application.Attach(launchedProcess);
             }
 
-            // Wait for the main window to be ready (FlaUI polls internally until the timeout).
+            Log("Waiting for the main window to become ready...");
             var mainWindow = app.GetMainWindow(automation, TimeSpan.FromSeconds(30));
+            Log($"Main window ready — Title: '{mainWindow.Title}', Handle: {mainWindow.Properties.NativeWindowHandle.Value}");
 
-            // Focus the window before typing.
+            return (app, mainWindow);
+        }
+
+        // ─── Demo mode (keyboard input) ───────────────────────────────────────────────
+
+        /// <summary>
+        /// Focuses the main window of the attached application and types 1234 + 345, then presses Enter.
+        /// This is the original calculator demo preserved as its own method.
+        /// </summary>
+        /// <param name="mainWindow">The ready main window element returned by <see cref="GetOrLaunchApp"/>.</param>
+        static void RunCalcDemo(AutomationElement mainWindow)
+        {
+            Log("--- Starting keyboard demo ---");
+
+            Log($"Focusing window '{mainWindow.Title}'...");
             mainWindow.Focus();
+            Log("Window focused.");
 
-            // Type 1234
+            Log("Typing '1234'...");
             Keyboard.Type("1234");
+            Log("Typed '1234'.");
 
-            // Type plus
+            Log("Typing '+'...");
             Keyboard.Type("+");
+            Log("Typed '+'.");
 
-            // Type 345
+            Log("Typing '345'...");
             Keyboard.Type("345");
+            Log("Typed '345'.");
 
-            // Press Enter to calculate
+            Log("Pressing Enter...");
             Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+            Log("Enter pressed.");
 
-            Console.WriteLine($"Automation completed for '{processName}'.");
+            Log("--- Keyboard demo completed: 1234 + 345 ---");
+            Console.WriteLine();
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
+        }
+
+        // ─── POC Inspector mode ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Walks the UI Automation element tree of the main window and prints every accessible element
+        /// with its ControlType, Name, AutomationId, and ClassName. Use this to verify which parts of
+        /// any application (including PowerBuilder) FlaUI can see and interact with.
+        /// </summary>
+        /// <param name="mainWindow">The ready main window element returned by <see cref="GetOrLaunchApp"/>.</param>
+        static void RunPocInspector(AutomationElement mainWindow)
+        {
+            Log("--- Starting POC UI tree inspection ---");
+            Log("This mode prints every accessible UI Automation element in the main window.");
+            Log("Elements with a Name or AutomationId can be targeted directly by FlaUI.");
+            Log("Elements with no Name and ControlType='Pane' may be opaque (e.g. PowerBuilder DataWindow).");
+            Log($"Inspecting window — Title: '{mainWindow.Title}', Class: '{mainWindow.Properties.ClassName.Value}'");
+
+            var sb = new StringBuilder();
+            sb.AppendLine("UI Automation Tree");
+            sb.AppendLine("==================");
+
+            int nodeCount = PrintUiaTree(mainWindow, sb, indent: 0, maxDepth: 6);
+            Console.WriteLine();
+            Console.WriteLine(sb.ToString());
+
+            Log($"--- POC inspection completed — {nodeCount} element(s) found ---");
+            Log("Review the tree above. Nodes showing Name/AutomationId are directly automatable.");
+            Console.WriteLine();
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
+        }
+
+        static int PrintUiaTree(AutomationElement element, StringBuilder sb, int indent, int maxDepth)
+        {
+            if (indent > maxDepth)
+            {
+                sb.AppendLine(Indent(indent) + "... (max depth reached, increase maxDepth if needed)");
+                return 0;
+            }
+
+            try
+            {
+                string name = element.Properties.Name.IsSupported ? (element.Properties.Name.Value ?? "") : "(unsupported)";
+                string automationId = element.Properties.AutomationId.IsSupported ? (element.Properties.AutomationId.Value ?? "") : "(unsupported)";
+                string controlType = element.Properties.ControlType.IsSupported ? element.Properties.ControlType.Value.ToString() : "(unsupported)";
+                string className = element.Properties.ClassName.IsSupported ? (element.Properties.ClassName.Value ?? "") : "(unsupported)";
+
+                sb.AppendLine($"{Indent(indent)}[{controlType}] Name=\"{name}\" AutomationId=\"{automationId}\" ClassName=\"{className}\"");
+
+                int count = 1;
+                foreach (var child in element.FindAllChildren())
+                    count += PrintUiaTree(child, sb, indent + 1, maxDepth);
+                return count;
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"{Indent(indent)}[ERROR reading element: {ex.Message}]");
+                LogError($"Error reading UIA element at depth {indent}", ex);
+                return 0;
+            }
         }
     }
 }
