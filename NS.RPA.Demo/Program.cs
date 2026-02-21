@@ -732,22 +732,52 @@ namespace NS.RPA.Demo
                     }
                 }
 
-                // ── Step 3: Detect context menu / inline menu items ───────────────────
-                // Windows-style context menus (right-click style) render as Menu/MenuItem
-                // elements WITHIN the existing window tree — they are NOT separate top-level
-                // windows. Give the menu a short time to render, then check inline first.
-                Log("Step 3: Waiting 400 ms for context menu / inline items to render...");
-                System.Threading.Thread.Sleep(400);
+                // ── Step 3: Try ALL detection strategies with individual sleeps ──────────
+                // All 4 strategies always run — each logs FOUND/NOT FOUND so you can
+                // tell which one works for your application.
+                Log("Step 3: Trying all context menu detection strategies...");
 
-                AutomationElement? popup = null;
+                AutomationElement? popup    = null;  // first successful strategy sets this
+                string             usedStrategy = "none";
 
-                // ── Strategy B (FIRST): inline Menu/MenuItem or new Invoke-capable items ──
-                // Context menus that appear inline (like right-click on Windows desktop, or
-                // WinUI CommandBarFlyout overflow) add Menu/MenuItem elements to the window
-                // tree. Check here before wasting time looking for a new top-level window.
-                Log("[Strategy B] Scanning for new Menu, MenuItem, or Invoke-capable elements...");
-                AutomationElement? contextMenuRoot = null;
-                var newItems = new List<AutomationElement>();
+                // ┌──────────────────────────────────────────────────────────────────────┐
+                // │ Strategy 1 — New top-level window (200 ms wait)                     │
+                // │ Classic Win32 context menus and some WPF menus open their own HWND. │
+                // └──────────────────────────────────────────────────────────────────────┘
+                Log("─────────────────────────────────────────────────────────────────────");
+                Log("[Strategy 1] New top-level window — sleeping 200 ms...");
+                System.Threading.Thread.Sleep(200);
+                try
+                {
+                    foreach (var child in automation.GetDesktop().FindAllChildren())
+                    {
+                        try
+                        {
+                            string rid = child.Properties.RuntimeId.Value.ToString();
+                            if (!existingWindowIds.Contains(rid))
+                            {
+                                string title = SafeGet(() => child.AsWindow()?.Title ?? "");
+                                string cls   = SafeGet(() => child.Properties.ClassName.Value ?? "");
+                                Log($"[Strategy 1] FOUND: new window Title='{title}' Class='{cls}'");
+                                if (popup == null) { popup = child; usedStrategy = "Strategy 1"; }
+                            }
+                        }
+                        catch { /* element gone */ }
+                    }
+                    if (popup == null) Log("[Strategy 1] NOT FOUND: no new top-level window.");
+                }
+                catch (Exception ex) { Log($"[Strategy 1] Error: {ex.Message}"); }
+
+                // ┌──────────────────────────────────────────────────────────────────────┐
+                // │ Strategy 2 — Menu/MenuItem control types in main window (400 ms)    │
+                // │ Right-click context menus in WinUI/XAML add Menu or MenuItem nodes  │
+                // │ directly inside the existing window hierarchy.                      │
+                // └──────────────────────────────────────────────────────────────────────┘
+                Log("─────────────────────────────────────────────────────────────────────");
+                Log("[Strategy 2] Menu/MenuItem in main window — sleeping 200 ms more (400 ms total)...");
+                System.Threading.Thread.Sleep(200);
+                AutomationElement? menuRoot2 = null;
+                int menuCount2 = 0;
                 try
                 {
                     foreach (var desc in mainWindow.FindAllDescendants())
@@ -756,82 +786,114 @@ namespace NS.RPA.Demo
                         {
                             string rid = desc.Properties.RuntimeId.Value.ToString();
                             if (existingDescendantIds.Contains(rid)) continue;
-
-                            // Match Menu/MenuItem control types (Windows context menus)
-                            // and any other newly-appeared Invoke-capable visible element.
                             var ct = SafeGet(() => desc.Properties.ControlType.Value, ControlType.Unknown);
-                            bool isMenuType = ct == ControlType.Menu || ct == ControlType.MenuItem;
-                            bool isInvokable = desc.Patterns.Invoke.IsSupported
-                                               && !desc.Properties.IsOffscreen.Value;
-
-                            if (isMenuType || isInvokable)
+                            if (ct == ControlType.Menu || ct == ControlType.MenuItem)
                             {
-                                // If we find a Menu container, use it as the root for the dump.
-                                if (ct == ControlType.Menu && contextMenuRoot == null)
-                                    contextMenuRoot = desc;
-                                newItems.Add(desc);
+                                string n = SafeGet(() => desc.Properties.Name.Value ?? "");
+                                string ctStr = ct.ToString();
+                                var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                                Log($"[Strategy 2] FOUND [{ctStr}] Name=\"{n}\" BoundingRect=X={r.X} Y={r.Y} W={r.Width} H={r.Height}");
+                                if (ct == ControlType.Menu && menuRoot2 == null) menuRoot2 = desc;
+                                menuCount2++;
                             }
                         }
-                        catch { /* element gone or not ready — skip */ }
+                        catch { /* skip */ }
                     }
+                    if (menuCount2 > 0)
+                    {
+                        Log($"[Strategy 2] FOUND: {menuCount2} Menu/MenuItem element(s).");
+                        if (popup == null) { popup = menuRoot2 ?? mainWindow; usedStrategy = "Strategy 2"; }
+                    }
+                    else Log("[Strategy 2] NOT FOUND: no new Menu/MenuItem elements.");
                 }
-                catch (Exception ex) { Log($"[Strategy B] Scan warning: {ex.Message}"); }
+                catch (Exception ex) { Log($"[Strategy 2] Error: {ex.Message}"); }
 
-                if (newItems.Count > 0)
+                // ┌──────────────────────────────────────────────────────────────────────┐
+                // │ Strategy 3 — New Invoke-capable visible descendants (600 ms)        │
+                // │ WinUI CommandBarFlyout items and toolbar overflow buttons appear as  │
+                // │ new Button/ListItem/AppBarButton elements inside the main window.    │
+                // └──────────────────────────────────────────────────────────────────────┘
+                Log("─────────────────────────────────────────────────────────────────────");
+                Log("[Strategy 3] New Invoke-capable descendants — sleeping 200 ms more (600 ms total)...");
+                System.Threading.Thread.Sleep(200);
+                int invokeCount3 = 0;
+                try
                 {
-                    Log($"[Strategy B] Found {newItems.Count} new element(s) in window tree — context menu is inline.");
-                    // Use the Menu container if found, otherwise dump the whole main window.
-                    popup = contextMenuRoot ?? mainWindow;
-                }
-                else
-                {
-                    // ── Strategy A (FALLBACK): new top-level window appeared ───────────────
-                    // Some menus render in their own lightweight HWND (e.g. classic Win32
-                    // context menus). Only check this if Strategy B found nothing.
-                    Log("[Strategy B] No inline menu elements found.");
-                    Log("[Strategy A] Checking for a new top-level window (up to 3 seconds)...");
-
-                    var popupResult = Retry.WhileNull(
-                        () =>
+                    foreach (var desc in mainWindow.FindAllDescendants())
+                    {
+                        try
                         {
-                            try
+                            string rid = desc.Properties.RuntimeId.Value.ToString();
+                            if (existingDescendantIds.Contains(rid)) continue;
+                            if (desc.Patterns.Invoke.IsSupported
+                                && !desc.Properties.IsOffscreen.Value
+                                && desc.Properties.IsEnabled.Value)
                             {
-                                foreach (var child in automation.GetDesktop().FindAllChildren())
-                                {
-                                    try
-                                    {
-                                        string runtimeId = child.Properties.RuntimeId.Value.ToString();
-                                        if (!existingWindowIds.Contains(runtimeId))
-                                        {
-                                            string title = SafeGet(() => child.AsWindow()?.Title ?? "");
-                                            string cls   = SafeGet(() => child.Properties.ClassName.Value ?? "");
-                                            Log($"[Strategy A] New top-level window — Title='{title}', Class='{cls}'");
-                                            return child;
-                                        }
-                                    }
-                                    catch { /* element gone */ }
-                                }
+                                string n = SafeGet(() => desc.Properties.Name.Value ?? "");
+                                string ct = SafeGet(() => desc.Properties.ControlType.Value.ToString(), "?");
+                                var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                                Log($"[Strategy 3] FOUND [{ct}] Name=\"{n}\" BoundingRect=X={r.X} Y={r.Y} W={r.Width} H={r.Height} " +
+                                    $"FlaUI: element.Patterns.Invoke.Pattern.Invoke()");
+                                invokeCount3++;
                             }
-                            catch { /* desktop scan failed */ }
-                            return null;
-                        },
-                        TimeSpan.FromSeconds(3),
-                        throwOnTimeout: false);
-
-                    if (popupResult?.Result != null)
-                    {
-                        popup = popupResult.Result;
-                        Log("[Strategy A] Context menu is in its own top-level window.");
+                        }
+                        catch { /* skip */ }
                     }
-                    else
+                    if (invokeCount3 > 0)
                     {
-                        Log("[Strategy A] No new window found either.");
-                        Log("No context menu detected. Tips:");
-                        Log("  1. Make sure the '...' button is actually being clicked (check coordinates).");
-                        Log("  2. The menu may close before detection — try again.");
-                        Log("  3. Some WinUI menus require ExpandCollapsePattern.Expand() instead of Invoke.");
+                        Log($"[Strategy 3] FOUND: {invokeCount3} new Invoke-capable element(s).");
+                        if (popup == null) { popup = mainWindow; usedStrategy = "Strategy 3"; }
                     }
+                    else Log("[Strategy 3] NOT FOUND: no new Invoke-capable elements.");
                 }
+                catch (Exception ex) { Log($"[Strategy 3] Error: {ex.Message}"); }
+
+                // ┌──────────────────────────────────────────────────────────────────────┐
+                // │ Strategy 4 — ExpandCollapse descendants (1000 ms)                  │
+                // │ Some WinUI menus and tree views use ExpandCollapsePattern instead   │
+                // │ of Invoke. Clicking "..." may expand a sub-section rather than open │
+                // │ a true popup.                                                       │
+                // └──────────────────────────────────────────────────────────────────────┘
+                Log("─────────────────────────────────────────────────────────────────────");
+                Log("[Strategy 4] New ExpandCollapse descendants — sleeping 400 ms more (1000 ms total)...");
+                System.Threading.Thread.Sleep(400);
+                int ecCount4 = 0;
+                try
+                {
+                    foreach (var desc in mainWindow.FindAllDescendants())
+                    {
+                        try
+                        {
+                            string rid = desc.Properties.RuntimeId.Value.ToString();
+                            if (existingDescendantIds.Contains(rid)) continue;
+                            if (desc.Patterns.ExpandCollapse.IsSupported
+                                && !desc.Properties.IsOffscreen.Value)
+                            {
+                                string n  = SafeGet(() => desc.Properties.Name.Value ?? "");
+                                string ct = SafeGet(() => desc.Properties.ControlType.Value.ToString(), "?");
+                                string ecState = SafeGet(() => desc.Patterns.ExpandCollapse.Pattern.ExpandCollapseState.Value.ToString(), "?");
+                                var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                                Log($"[Strategy 4] FOUND [{ct}] Name=\"{n}\" State={ecState} BoundingRect=X={r.X} Y={r.Y} W={r.Width} H={r.Height} " +
+                                    $"FlaUI: element.Patterns.ExpandCollapse.Pattern.Expand()");
+                                ecCount4++;
+                            }
+                        }
+                        catch { /* skip */ }
+                    }
+                    if (ecCount4 > 0)
+                    {
+                        Log($"[Strategy 4] FOUND: {ecCount4} new ExpandCollapse element(s).");
+                        if (popup == null) { popup = mainWindow; usedStrategy = "Strategy 4"; }
+                    }
+                    else Log("[Strategy 4] NOT FOUND: no new ExpandCollapse elements.");
+                }
+                catch (Exception ex) { Log($"[Strategy 4] Error: {ex.Message}"); }
+
+                Log("─────────────────────────────────────────────────────────────────────");
+                if (popup != null)
+                    Log($"Step 3 complete — using result from {usedStrategy}. Proceeding to dump.");
+                else
+                    Log("Step 3 complete — NO strategy found context menu items. Check click target coordinates.");
 
                 // ── Step 4: Dump the popup tree ────────────────────────────────────────
                 if (popup != null)
