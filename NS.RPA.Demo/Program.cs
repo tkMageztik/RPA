@@ -732,83 +732,104 @@ namespace NS.RPA.Demo
                     }
                 }
 
-                // ── Step 3: Wait for popup ─────────────────────────────────────────────
-                Log("Step 3: Waiting for popup / context menu to appear (up to 5 seconds)...");
+                // ── Step 3: Detect context menu / inline menu items ───────────────────
+                // Windows-style context menus (right-click style) render as Menu/MenuItem
+                // elements WITHIN the existing window tree — they are NOT separate top-level
+                // windows. Give the menu a short time to render, then check inline first.
+                Log("Step 3: Waiting 400 ms for context menu / inline items to render...");
+                System.Threading.Thread.Sleep(400);
 
                 AutomationElement? popup = null;
 
-                // Strategy A: new top-level window appeared
-                var popupResult = Retry.WhileNull(
-                    () =>
+                // ── Strategy B (FIRST): inline Menu/MenuItem or new Invoke-capable items ──
+                // Context menus that appear inline (like right-click on Windows desktop, or
+                // WinUI CommandBarFlyout overflow) add Menu/MenuItem elements to the window
+                // tree. Check here before wasting time looking for a new top-level window.
+                Log("[Strategy B] Scanning for new Menu, MenuItem, or Invoke-capable elements...");
+                AutomationElement? contextMenuRoot = null;
+                var newItems = new List<AutomationElement>();
+                try
+                {
+                    foreach (var desc in mainWindow.FindAllDescendants())
                     {
                         try
                         {
-                            foreach (var child in automation.GetDesktop().FindAllChildren())
+                            string rid = desc.Properties.RuntimeId.Value.ToString();
+                            if (existingDescendantIds.Contains(rid)) continue;
+
+                            // Match Menu/MenuItem control types (Windows context menus)
+                            // and any other newly-appeared Invoke-capable visible element.
+                            var ct = SafeGet(() => desc.Properties.ControlType.Value, ControlType.Unknown);
+                            bool isMenuType = ct == ControlType.Menu || ct == ControlType.MenuItem;
+                            bool isInvokable = desc.Patterns.Invoke.IsSupported
+                                               && !desc.Properties.IsOffscreen.Value;
+
+                            if (isMenuType || isInvokable)
                             {
-                                try
-                                {
-                                    string runtimeId = child.Properties.RuntimeId.Value.ToString();
-                                    if (!existingWindowIds.Contains(runtimeId))
-                                    {
-                                        // New window — verify it has content
-                                        string title = SafeGet(() => child.AsWindow()?.Title ?? "");
-                                        string cls   = SafeGet(() => child.Properties.ClassName.Value ?? "");
-                                        Log($"[Popup detected] New top-level window — Title='{title}', Class='{cls}'");
-                                        return child;
-                                    }
-                                }
-                                catch { /* element gone */ }
+                                // If we find a Menu container, use it as the root for the dump.
+                                if (ct == ControlType.Menu && contextMenuRoot == null)
+                                    contextMenuRoot = desc;
+                                newItems.Add(desc);
                             }
                         }
-                        catch { /* desktop scan failed */ }
-                        return null;
-                    },
-                    TimeSpan.FromSeconds(5),
-                    throwOnTimeout: false);   // don't throw — fall back to strategy B
+                        catch { /* element gone or not ready — skip */ }
+                    }
+                }
+                catch (Exception ex) { Log($"[Strategy B] Scan warning: {ex.Message}"); }
 
-                if (popupResult?.Result != null)
+                if (newItems.Count > 0)
                 {
-                    popup = popupResult.Result;
-                    Log("[Strategy A] Popup is a new top-level window.");
+                    Log($"[Strategy B] Found {newItems.Count} new element(s) in window tree — context menu is inline.");
+                    // Use the Menu container if found, otherwise dump the whole main window.
+                    popup = contextMenuRoot ?? mainWindow;
                 }
                 else
                 {
-                    // Strategy B: new Invoke-capable children appeared inside main window
-                    Log("[Strategy A] No new top-level window detected.");
-                    Log("[Strategy B] Scanning main window for newly visible Invoke-capable elements...");
+                    // ── Strategy A (FALLBACK): new top-level window appeared ───────────────
+                    // Some menus render in their own lightweight HWND (e.g. classic Win32
+                    // context menus). Only check this if Strategy B found nothing.
+                    Log("[Strategy B] No inline menu elements found.");
+                    Log("[Strategy A] Checking for a new top-level window (up to 3 seconds)...");
 
-                    var newItems = new List<AutomationElement>();
-                    try
-                    {
-                        foreach (var desc in mainWindow.FindAllDescendants())
+                    var popupResult = Retry.WhileNull(
+                        () =>
                         {
                             try
                             {
-                                if (desc.Patterns.Invoke.IsSupported
-                                    && !desc.Properties.IsOffscreen.Value)
+                                foreach (var child in automation.GetDesktop().FindAllChildren())
                                 {
-                                    // Compare against the pre-click descendant snapshot
-                                    // (NOT existingWindowIds which only has top-level windows)
-                                    string rid = desc.Properties.RuntimeId.Value.ToString();
-                                    if (!existingDescendantIds.Contains(rid))
-                                        newItems.Add(desc);
+                                    try
+                                    {
+                                        string runtimeId = child.Properties.RuntimeId.Value.ToString();
+                                        if (!existingWindowIds.Contains(runtimeId))
+                                        {
+                                            string title = SafeGet(() => child.AsWindow()?.Title ?? "");
+                                            string cls   = SafeGet(() => child.Properties.ClassName.Value ?? "");
+                                            Log($"[Strategy A] New top-level window — Title='{title}', Class='{cls}'");
+                                            return child;
+                                        }
+                                    }
+                                    catch { /* element gone */ }
                                 }
                             }
-                            catch { /* skip */ }
-                        }
-                    }
-                    catch (Exception ex) { Log($"[Strategy B] Scan warning: {ex.Message}"); }
+                            catch { /* desktop scan failed */ }
+                            return null;
+                        },
+                        TimeSpan.FromSeconds(3),
+                        throwOnTimeout: false);
 
-                    if (newItems.Count > 0)
+                    if (popupResult?.Result != null)
                     {
-                        Log($"[Strategy B] Found {newItems.Count} new Invoke-capable element(s) — treating as popup items.");
-                        // Use the main window as the dump root (context menu renders inside it)
-                        popup = mainWindow;
+                        popup = popupResult.Result;
+                        Log("[Strategy A] Context menu is in its own top-level window.");
                     }
                     else
                     {
-                        Log("[Strategy B] No new elements detected. The popup may be coordinate-based or use a custom renderer.");
-                        Log("Tip: try --click-at with the center coords of the '...' button from your --poc report.");
+                        Log("[Strategy A] No new window found either.");
+                        Log("No context menu detected. Tips:");
+                        Log("  1. Make sure the '...' button is actually being clicked (check coordinates).");
+                        Log("  2. The menu may close before detection — try again.");
+                        Log("  3. Some WinUI menus require ExpandCollapsePattern.Expand() instead of Invoke.");
                     }
                 }
 
