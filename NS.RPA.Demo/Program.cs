@@ -332,67 +332,88 @@ namespace NS.RPA.Demo
         {
             string appType = DetectAppType(mainWindow);
             string windowClass = "";
-            try { windowClass = mainWindow.Properties.ClassName.Value ?? ""; } catch { }
+            try { windowClass = mainWindow.Properties.ClassName.Value ?? ""; }
+            catch (Exception ex) { Log($"Could not read ClassName: {ex.Message}"); }
 
-            Log("--- Starting POC UI Inspector ---");
-            Log("Output contains: ControlType | Name | AutomationId | ClassName | BoundingRect |");
-            Log("                 IsEnabled | IsOffscreen | SupportedPatterns | CurrentValue");
-            Log("FlaUI code hints are shown for each interactable element.");
-
-            var sb = new StringBuilder();
-            sb.AppendLine("╔══════════════════════════════════════════════════════════════════════════════╗");
-            sb.AppendLine("║              NS.RPA.Demo — POC UI Automation Inspector Report               ║");
-            sb.AppendLine("╚══════════════════════════════════════════════════════════════════════════════╝");
-            sb.AppendLine();
-            sb.AppendLine($"Generated    : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            sb.AppendLine($"Window Title : {mainWindow.Title}");
-            sb.AppendLine($"Window Class : {windowClass}");
-            sb.AppendLine($"App Type     : {appType}");
-            sb.AppendLine();
-            sb.AppendLine("── Legend ───────────────────────────────────────────────────────────────────");
-            sb.AppendLine("  [BUTTON]   → element.AsButton().Invoke()  or  Keyboard focus + Enter");
-            sb.AppendLine("  [EDIT]     → element.AsTextBox().Enter(\"value\")  or  ValuePattern.SetValue");
-            sb.AppendLine("  [CHECK]    → element.AsCheckBox().Toggle()");
-            sb.AppendLine("  [COMBO]    → element.AsComboBox().Select(\"item\")");
-            sb.AppendLine("  [LIST]     → element.AsListBox().Select(\"item\")");
-            sb.AppendLine("  [MENU]     → element.AsMenuItem().Invoke()  or  ExpandCollapse");
-            sb.AppendLine("  [TREE]     → ExpandCollapsePattern.Expand() / Collapse()");
-            sb.AppendLine("  [COORD]    → Mouse.Click(new Point(cx,cy))  — use when element has no pattern");
-            sb.AppendLine("  [OPAQUE]   → Not accessible via UIA (e.g. DataWindow). Use coords or WinAPI.");
-            sb.AppendLine();
-            sb.AppendLine("── UI Element Tree ──────────────────────────────────────────────────────────");
-
-            int nodeCount = PrintRichUiaTree(mainWindow, sb, indent: 0, maxDepth: 10);
-
-            sb.AppendLine();
-            sb.AppendLine($"── Summary: {nodeCount} element(s) found ─────────────────────────────────────");
-            if (appType == "PowerBuilder")
-            {
-                sb.AppendLine();
-                sb.AppendLine("PowerBuilder note:");
-                sb.AppendLine("  Controls showing [OPAQUE] are DataWindows or custom PB painters.");
-                sb.AppendLine("  For those, use coordinate-based Mouse.Click(new Point(x,y)) with the");
-                sb.AppendLine("  BoundingRect center coordinates shown above each [OPAQUE] element.");
-            }
-
-            string report = sb.ToString();
-            Console.WriteLine();
-            Console.WriteLine(report);
-
+            // If a file path was given, install a TeeWriter so every byte written to
+            // Console.Out is simultaneously written to the file — console and file are identical.
+            TextWriter originalOut = Console.Out;
+            StreamWriter? fileWriter = null;
             if (outputFile != null)
             {
                 try
                 {
-                    File.WriteAllText(outputFile, report, Encoding.UTF8);
-                    Log($"Report saved to: {outputFile}");
+                    fileWriter = new StreamWriter(outputFile, append: false, Encoding.UTF8)
+                    {
+                        AutoFlush = true
+                    };
+                    Console.SetOut(new TeeWriter(originalOut, fileWriter));
+                    Log($"Tee output active — mirroring console to: {outputFile}");
                 }
                 catch (Exception ex)
                 {
-                    LogError($"Could not save report to '{outputFile}'", ex);
+                    LogError($"Could not open output file '{outputFile}' — console only.", ex);
                 }
             }
 
-            Log($"--- POC inspection completed — {nodeCount} element(s) found ---");
+            try
+            {
+                Log("--- Starting POC UI Inspector ---");
+                Log("Output contains: ControlType | Name | AutomationId | ClassName | BoundingRect |");
+                Log("                 IsEnabled | IsOffscreen | SupportedPatterns | CurrentValue");
+                Log("FlaUI code hints are shown for each interactable element.");
+
+                var sb = new StringBuilder();
+                sb.AppendLine("╔══════════════════════════════════════════════════════════════════════════════╗");
+                sb.AppendLine("║              NS.RPA.Demo — POC UI Automation Inspector Report               ║");
+                sb.AppendLine("╚══════════════════════════════════════════════════════════════════════════════╝");
+                sb.AppendLine();
+                sb.AppendLine($"Generated    : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                sb.AppendLine($"Window Title : {mainWindow.Title}");
+                sb.AppendLine($"Window Class : {windowClass}");
+                sb.AppendLine($"App Type     : {appType}");
+                sb.AppendLine();
+                sb.AppendLine("── Legend ───────────────────────────────────────────────────────────────────");
+                sb.AppendLine("  [BUTTON]   → element.AsButton().Invoke()  or  Keyboard focus + Enter");
+                sb.AppendLine("  [EDIT]     → element.AsTextBox().Enter(\"value\")  or  ValuePattern.SetValue");
+                sb.AppendLine("  [CHECK]    → element.AsCheckBox().Toggle()");
+                sb.AppendLine("  [COMBO]    → element.AsComboBox().Select(\"item\")");
+                sb.AppendLine("  [LIST]     → element.AsListBox().Select(\"item\")");
+                sb.AppendLine("  [MENU]     → element.AsMenuItem().Invoke()  or  ExpandCollapse");
+                sb.AppendLine("  [TREE]     → ExpandCollapsePattern.Expand() / Collapse()");
+                sb.AppendLine("  [COORD]    → Mouse.Click(new Point(cx,cy))  — use when element has no pattern");
+                sb.AppendLine("  [OPAQUE]   → Not accessible via UIA (e.g. DataWindow). Use coords or WinAPI.");
+                sb.AppendLine();
+                sb.AppendLine("── UI Element Tree ──────────────────────────────────────────────────────────");
+
+                int nodeCount = PrintRichUiaTree(mainWindow, sb, indent: 0, maxDepth: 10);
+
+                sb.AppendLine();
+                sb.AppendLine($"── Summary: {nodeCount} element(s) found ─────────────────────────────────────");
+                if (appType == "PowerBuilder")
+                {
+                    sb.AppendLine();
+                    sb.AppendLine("PowerBuilder note:");
+                    sb.AppendLine("  Controls showing [OPAQUE] are DataWindows or custom PB painters.");
+                    sb.AppendLine("  For those, use coordinate-based Mouse.Click(new Point(x,y)) with the");
+                    sb.AppendLine("  BoundingRect center coordinates shown above each [OPAQUE] element.");
+                }
+
+                // Console.WriteLine goes through TeeWriter, so the file gets exactly this too.
+                Console.WriteLine();
+                Console.WriteLine(sb.ToString());
+
+                Log($"--- POC inspection completed — {nodeCount} element(s) found ---");
+                if (outputFile != null && fileWriter != null)
+                    Log($"Report saved to: {outputFile}");  // logged while TeeWriter is still active → goes to file too
+            }
+            finally
+            {
+                // Always restore Console.Out and close the file, even if an exception occurred.
+                Console.SetOut(originalOut);
+                fileWriter?.Dispose();
+            }
+
             Console.WriteLine();
             Console.WriteLine("Press any key to exit...");
             Console.ReadKey();
@@ -538,6 +559,69 @@ namespace NS.RPA.Demo
         static T SafeGet<T>(Func<T> fn, T fallback)
         {
             try { return fn(); } catch { return fallback; }
+        }
+
+        // ─── TeeWriter ────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// A <see cref="TextWriter"/> that mirrors every write to two underlying writers
+        /// simultaneously (e.g. the original Console.Out and a file stream).
+        /// This guarantees that the file and the console receive byte-for-byte identical output.
+        /// </summary>
+        sealed class TeeWriter : TextWriter
+        {
+            private readonly TextWriter _primary;
+            private readonly TextWriter _secondary;
+
+            public TeeWriter(TextWriter primary, TextWriter secondary)
+            {
+                _primary   = primary;
+                _secondary = secondary;
+            }
+
+            public override System.Text.Encoding Encoding => _primary.Encoding;
+
+            public override void Write(char value)
+            {
+                _primary.Write(value);
+                _secondary.Write(value);
+            }
+
+            public override void Write(char[] buffer, int index, int count)
+            {
+                _primary.Write(buffer, index, count);
+                _secondary.Write(buffer, index, count);
+            }
+
+            public override void Write(string? value)
+            {
+                _primary.Write(value);
+                _secondary.Write(value);
+            }
+
+            public override void WriteLine(string? value)
+            {
+                _primary.WriteLine(value);
+                _secondary.WriteLine(value);
+            }
+
+            public override void Flush()
+            {
+                _primary.Flush();
+                _secondary.Flush();
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    _primary.Flush();
+                    _secondary.Flush();
+                    // Only dispose secondary (the file); primary is Console.Out — do not close it.
+                    _secondary.Dispose();
+                }
+                base.Dispose(disposing);
+            }
         }
     }
 }
