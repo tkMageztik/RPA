@@ -341,6 +341,7 @@ namespace NS.RPA.Demo
 
             Log("Pressing Enter...");
             Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+            Keyboard.Release(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
             Log("Enter pressed.");
 
             Log("--- Keyboard demo completed: 1234 + 345 ---");
@@ -929,11 +930,13 @@ namespace NS.RPA.Demo
                         Log($"  Clicking first menu item: Name=\"{firstName}\" at ({firstCenter.X},{firstCenter.Y})...");
                         // WinUI MenuFlyoutItem: Mouse.Click moves the cursor and focuses/hovers
                         // the item (same as arrow key), but Enter is what actually activates it.
-                        // Strategy: focus via InvokePattern (or mouse move), then press Enter.
+                        // Strategy: focus via InvokePattern, then send full Enter key-down+key-up.
+                        // Keyboard.Press sends key-down only; we must also call Release for key-up.
                         try { firstEl.Patterns.Invoke.Pattern.Invoke(); } catch { /* focus attempt — ignore */ }
                         System.Threading.Thread.Sleep(80); // brief pause so WinUI registers focus
                         Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
-                        Log("  Enter key sent — item activated.");
+                        Keyboard.Release(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+                        Log("  Enter key down+up sent — item activated.");
                         menuSummary = $"menu via {usedStrategy}, {menuItems.Count} item(s), activated \"{firstName}\"";
                     }
 
@@ -1400,7 +1403,8 @@ namespace NS.RPA.Demo
                             try { firstItem.Patterns.Invoke.Pattern.Invoke(); } catch { /* focus attempt — ignore */ }
                             System.Threading.Thread.Sleep(80);
                             Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
-                            Log("First item activated via Enter key.");
+                            Keyboard.Release(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+                            Log("First item activated via Enter key down+up.");
                         }
                         else
                         {
