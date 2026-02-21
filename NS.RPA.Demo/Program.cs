@@ -155,18 +155,20 @@ namespace NS.RPA.Demo
             var procs = Process.GetProcessesByName(processName);
             foreach (var proc in procs)
             {
+                int pid = -1;
                 try
                 {
+                    pid = proc.Id;  // capture before any async operations; proc may exit at any moment
                     var app = Application.Attach(proc);
                     var win = app.GetMainWindow(automation);
                     if (win != null)
                     {
-                        Log($"[Strategy 1 - Exact process] Found '{processName}' (PID {proc.Id}).");
+                        Log($"[Strategy 1 - Exact process] Found '{processName}' (PID {pid}).");
                         DetectAndLogAppType(win);
                         return win;
                     }
                 }
-                catch (Exception ex) { Log($"[Strategy 1] Skipping PID {proc.Id}: {ex.Message}"); }
+                catch (Exception ex) { Log($"[Strategy 1] Skipping PID {pid}: {ex.Message}"); }
             }
 
             // ── Strategy 2: UWP ApplicationFrameHost ──────────────────────────────────
@@ -176,8 +178,10 @@ namespace NS.RPA.Demo
             var hostProcs = Process.GetProcessesByName(UwpHostProcessName);
             foreach (var hostProc in hostProcs)
             {
+                int hostPid = -1;
                 try
                 {
+                    hostPid = hostProc.Id;  // capture before async operations
                     var hostApp = Application.Attach(hostProc);
                     foreach (var win in hostApp.GetAllTopLevelWindows(automation))
                     {
@@ -197,7 +201,7 @@ namespace NS.RPA.Demo
                         }
                     }
                 }
-                catch (Exception ex) { Log($"[Strategy 2] Skipping UWP host PID {hostProc.Id}: {ex.Message}"); }
+                catch (Exception ex) { Log($"[Strategy 2] Skipping UWP host PID {hostPid}: {ex.Message}"); }
             }
 
             // ── Strategy 3: Full desktop scan ─────────────────────────────────────────
