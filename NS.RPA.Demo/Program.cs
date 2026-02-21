@@ -927,22 +927,14 @@ namespace NS.RPA.Demo
                     {
                         var (firstEl, firstName, firstCenter) = menuItems[0];
                         Log($"  Clicking first menu item: Name=\"{firstName}\" at ({firstCenter.X},{firstCenter.Y})...");
-                        // WinUI MenuFlyoutItem: InvokePattern.Invoke() only selects/focuses
-                        // the item without actually activating it. A physical mouse click is
-                        // required. Use Mouse.Click first; fall back to InvokePattern if it
-                        // throws (e.g. element moved off-screen between find and click).
-                        try
-                        {
-                            Mouse.Click(firstCenter);
-                            Log("  Mouse click sent.");
-                        }
-                        catch
-                        {
-                            Log($"  Mouse click failed — trying InvokePattern at ({firstCenter.X},{firstCenter.Y})...");
-                            firstEl.Patterns.Invoke.Pattern.Invoke();
-                            Log("  InvokePattern.Invoke() sent.");
-                        }
-                        menuSummary = $"menu via {usedStrategy}, {menuItems.Count} item(s), clicked \"{firstName}\"";
+                        // WinUI MenuFlyoutItem: Mouse.Click moves the cursor and focuses/hovers
+                        // the item (same as arrow key), but Enter is what actually activates it.
+                        // Strategy: focus via InvokePattern (or mouse move), then press Enter.
+                        try { firstEl.Patterns.Invoke.Pattern.Invoke(); } catch { /* focus attempt — ignore */ }
+                        System.Threading.Thread.Sleep(80); // brief pause so WinUI registers focus
+                        Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+                        Log("  Enter key sent — item activated.");
+                        menuSummary = $"menu via {usedStrategy}, {menuItems.Count} item(s), activated \"{firstName}\"";
                     }
 
                     // ── Step 5: Wait for resulting new window and dump it ─────────────
@@ -1405,17 +1397,10 @@ namespace NS.RPA.Demo
                             int itemCy = itemRect.Y + itemRect.Height / 2;
                             Log($"Clicking first item: Name='{itemName}' at ({itemCx},{itemCy})...");
                             // Physical mouse click — WinUI MenuFlyoutItem requires this
-                            try
-                            {
-                                Mouse.Click(new System.Drawing.Point(itemCx, itemCy));
-                                Log("First item clicked via mouse.");
-                            }
-                            catch
-                            {
-                                Log($"Mouse click failed — trying InvokePattern...");
-                                firstItem.Patterns.Invoke.Pattern.Invoke();
-                                Log("First item invoked via InvokePattern.");
-                            }
+                            try { firstItem.Patterns.Invoke.Pattern.Invoke(); } catch { /* focus attempt — ignore */ }
+                            System.Threading.Thread.Sleep(80);
+                            Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
+                            Log("First item activated via Enter key.");
                         }
                         else
                         {
