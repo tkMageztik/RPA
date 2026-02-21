@@ -59,6 +59,7 @@ namespace NS.RPA.Demo
                 string appPath = "calc.exe";
                 bool pocMode = false;
                 bool contextMode = false;
+                bool dotsMode = false;
                 bool clickFirst = false;
                 string? outputFile = null;
                 string? windowTitle = null;
@@ -72,6 +73,8 @@ namespace NS.RPA.Demo
                         pocMode = true;
                     else if (args[i].Equals("--context", StringComparison.OrdinalIgnoreCase))
                         contextMode = true;
+                    else if (args[i].Equals("--dots", StringComparison.OrdinalIgnoreCase))
+                        dotsMode = true;
                     else if (args[i].Equals("--click-first", StringComparison.OrdinalIgnoreCase))
                         clickFirst = true;
                     else if (args[i].Equals("--out", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
@@ -91,7 +94,9 @@ namespace NS.RPA.Demo
                 if (string.IsNullOrWhiteSpace(appPath))
                     throw new ArgumentException("Application path must not be empty.");
 
-                string mode = contextMode ? "Context Menu Explorer" : pocMode ? "POC Inspector" : "Demo (keyboard)";
+                string mode = dotsMode ? "Dots Auto-Explorer" :
+                              contextMode ? "Context Menu Explorer" :
+                              pocMode ? "POC Inspector" : "Demo (keyboard)";
                 Log($"Mode        : {mode}");
                 Log($"Application : {appPath}");
                 if (windowTitle  != null) Log($"Window title: '{windowTitle}' (override)");
@@ -104,7 +109,9 @@ namespace NS.RPA.Demo
 
                 var (_, mainWindow) = GetOrLaunchApp(appPath, automation, windowTitle);
 
-                if (contextMode)
+                if (dotsMode)
+                    RunDotsExplorer(mainWindow, automation, outputFile);
+                else if (contextMode)
                     RunContextMenuExplorer(mainWindow, automation, clickByName, clickById, clickAtCoords, clickFirst, outputFile);
                 else if (pocMode)
                     RunPocInspector(mainWindow, outputFile);
@@ -279,6 +286,8 @@ namespace NS.RPA.Demo
 
                 if (className.Contains("ApplicationFrameWindow") || className.Contains("Windows.UI.Core"))
                     return "UWP (Modern Windows App)";
+                if (className.Contains("WinUIDesktopWin32WindowClass") || className.Contains("WinUI"))
+                    return "WinUI / Windows App SDK";
                 if (className.StartsWith("pbframe", StringComparison.OrdinalIgnoreCase)
                     || className.StartsWith("PBGUI", StringComparison.OrdinalIgnoreCase)
                     || className.StartsWith("PBGUIObject", StringComparison.OrdinalIgnoreCase))
@@ -568,6 +577,455 @@ namespace NS.RPA.Demo
                 LogError($"Error reading UIA element at depth {indent}", ex);
                 return 0;
             }
+        }
+
+        // ─── Dots Auto-Explorer mode ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// Automatically discovers every "..." / more-options button in the window,
+        /// clicks each one in turn, detects whatever menu or flyout appears using four
+        /// strategies, clicks the first menu item, then captures and dumps the resulting
+        /// new window — all without requiring any parameters from the user.
+        /// </summary>
+        static void RunDotsExplorer(Window mainWindow, UIA3Automation automation, string? outputFile)
+        {
+            // ── Tee output to file if requested ──────────────────────────────────────
+            TextWriter originalOut = Console.Out;
+            StreamWriter? fileWriter = null;
+            if (outputFile != null)
+            {
+                try
+                {
+                    fileWriter = new StreamWriter(outputFile, append: false, Encoding.UTF8) { AutoFlush = true };
+                    Console.SetOut(new TeeWriter(originalOut, fileWriter));
+                    Log($"Tee output active — mirroring console to: {outputFile}");
+                }
+                catch (Exception ex) { LogError($"Could not open output file — console only.", ex); }
+            }
+
+            try
+            {
+                Log("═══════════════════════════════════════════════════════════════════════");
+                Log("  --dots Auto-Explorer: finds '...' buttons and explores their menus  ");
+                Log("═══════════════════════════════════════════════════════════════════════");
+
+                // ── Step 1: Find all "..." button candidates ──────────────────────────
+                Log("Step 1: Discovering '...' / more-options button candidates...");
+
+                var candidates = new List<(AutomationElement el, string label, System.Drawing.Point center)>();
+                try
+                {
+                    foreach (var desc in mainWindow.FindAllDescendants())
+                    {
+                        try
+                        {
+                            // Only consider elements that are Invoke-capable and on-screen.
+                            if (!desc.Patterns.Invoke.IsSupported) continue;
+                            bool offscreen = SafeGet(() => desc.Properties.IsOffscreen.Value, true);
+                            if (offscreen) continue;
+                            bool enabled = SafeGet(() => desc.Properties.IsEnabled.Value, false);
+                            if (!enabled) continue;
+
+                            string name  = SafeGet(() => desc.Properties.Name.Value ?? "");
+                            string cls   = SafeGet(() => desc.Properties.ClassName.Value ?? "");
+                            string autId = SafeGet(() => desc.Properties.AutomationId.Value ?? "");
+                            var    ct    = SafeGet(() => desc.Properties.ControlType.Value, ControlType.Unknown);
+                            var    rect  = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+
+                            // Heuristic 1: empty name + Button class + small (≤64px) — the classic "..." icon button
+                            bool emptySmallButton = string.IsNullOrEmpty(name)
+                                && ct == ControlType.Button
+                                && rect.Width <= 64 && rect.Height <= 64
+                                && !rect.IsEmpty;
+
+                            // Heuristic 2: name is literally "..." or "…"
+                            bool dotName = name == "..." || name == "…";
+
+                            // Heuristic 3: name or AutomationId contains keywords
+                            bool keywordMatch =
+                                name.IndexOf("more", StringComparison.OrdinalIgnoreCase)    >= 0 ||
+                                name.IndexOf("option", StringComparison.OrdinalIgnoreCase)  >= 0 ||
+                                name.IndexOf("menu", StringComparison.OrdinalIgnoreCase)    >= 0 ||
+                                autId.IndexOf("more", StringComparison.OrdinalIgnoreCase)   >= 0 ||
+                                autId.IndexOf("overflow", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                autId.IndexOf("dots", StringComparison.OrdinalIgnoreCase)   >= 0 ||
+                                autId.IndexOf("ellipsis", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                            if (!emptySmallButton && !dotName && !keywordMatch) continue;
+
+                            int cx = rect.X + rect.Width  / 2;
+                            int cy = rect.Y + rect.Height / 2;
+                            string reason = emptySmallButton ? "empty-name+small-button"
+                                          : dotName          ? "name='...'"
+                                          :                    "keyword-match";
+                            string label = $"[{ct}] Name=\"{name}\" AutomationId=\"{autId}\" " +
+                                           $"BoundingRect=X={rect.X} Y={rect.Y} W={rect.Width} H={rect.Height} " +
+                                           $"(center {cx},{cy}) reason={reason}";
+
+                            candidates.Add((desc, label, new System.Drawing.Point(cx, cy)));
+                        }
+                        catch { /* skip inaccessible */ }
+                    }
+                }
+                catch (Exception ex) { Log($"Candidate discovery warning: {ex.Message}"); }
+
+                if (candidates.Count == 0)
+                {
+                    Log("No '...' button candidates found. Run --poc to inspect the full element tree.");
+                    return;
+                }
+
+                Log($"Found {candidates.Count} candidate(s):");
+                for (int i = 0; i < candidates.Count; i++)
+                    Log($"  [{i + 1}] {candidates[i].label}");
+
+                // ── Step 2: Also find the WinUI PopupWindowSiteBridge pane ─────────────
+                // WinUI flyouts render inside a Microsoft.UI.Content.PopupWindowSiteBridge
+                // pane that is Offscreen=True when no popup is open. When a flyout opens,
+                // the pane becomes visible and gains children. We snapshot its children
+                // before clicking so we can diff after.
+                AutomationElement? popupBridge = null;
+                var preClickBridgeChildIds = new HashSet<string>();
+                try
+                {
+                    foreach (var desc in mainWindow.FindAllDescendants())
+                    {
+                        try
+                        {
+                            string cls = SafeGet(() => desc.Properties.ClassName.Value ?? "");
+                            if (cls.Contains("PopupWindowSiteBridge") || cls.Contains("PopupHost"))
+                            {
+                                popupBridge = desc;
+                                // snapshot its current children IDs (likely empty while offscreen)
+                                foreach (var child in desc.FindAllChildren())
+                                    try { preClickBridgeChildIds.Add(child.Properties.RuntimeId.Value.ToString()); }
+                                    catch { }
+                                break;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+
+                if (popupBridge != null)
+                    Log($"WinUI PopupWindowSiteBridge found — will check for flyout content after each click.");
+                else
+                    Log("WinUI PopupWindowSiteBridge not found — will use standard strategies only.");
+
+                // Summary of results across all candidates
+                var successSummary = new List<string>();
+
+                // ── Step 3: Try each candidate ────────────────────────────────────────
+                for (int ci = 0; ci < candidates.Count; ci++)
+                {
+                    var (candEl, candLabel, candCenter) = candidates[ci];
+                    Log("───────────────────────────────────────────────────────────────────");
+                    Log($"Trying candidate [{ci + 1}/{candidates.Count}]: {candLabel}");
+
+                    // Take fresh snapshot of top-level windows and main window descendants
+                    var snapWindowIds = new HashSet<string>();
+                    var snapDescIds   = new HashSet<string>();
+                    try
+                    {
+                        foreach (var w in automation.GetDesktop().FindAllChildren())
+                            try { snapWindowIds.Add(w.Properties.RuntimeId.Value.ToString()); } catch { }
+                        foreach (var d in mainWindow.FindAllDescendants())
+                            try { if (d.Patterns.Invoke.IsSupported || d.Properties.ControlType.Value == ControlType.Menu || d.Properties.ControlType.Value == ControlType.MenuItem)
+                                    snapDescIds.Add(d.Properties.RuntimeId.Value.ToString()); } catch { }
+                    }
+                    catch { }
+
+                    // Ensure the window is focused before clicking
+                    try { mainWindow.Focus(); } catch { }
+
+                    // Click the candidate
+                    try
+                    {
+                        Log($"  Clicking via InvokePattern...");
+                        candEl.Patterns.Invoke.Pattern.Invoke();
+                        Log($"  InvokePattern.Invoke() sent.");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"  InvokePattern failed ({ex.Message}) — falling back to mouse click at ({candCenter.X},{candCenter.Y})...");
+                        try { Mouse.Click(candCenter); Log("  Mouse click sent."); }
+                        catch (Exception mex) { Log($"  Mouse click also failed: {mex.Message}. Skipping."); continue; }
+                    }
+
+                    AutomationElement? menuRoot = null;
+                    string usedStrategy = "none";
+                    string menuSummary  = "";
+
+                    // ── Strategy 0 (200 ms): WinUI PopupWindowSiteBridge became visible ──
+                    Log("  [S0] WinUI PopupWindowSiteBridge — sleeping 200 ms...");
+                    System.Threading.Thread.Sleep(200);
+                    if (popupBridge != null)
+                    {
+                        try
+                        {
+                            bool bridgeVisible = !SafeGet(() => popupBridge.Properties.IsOffscreen.Value, true);
+                            var  bridgeChildren = popupBridge.FindAllChildren();
+                            var  newBridgeChildren = new List<AutomationElement>();
+                            foreach (var bc in bridgeChildren)
+                                try { if (!preClickBridgeChildIds.Contains(bc.Properties.RuntimeId.Value.ToString())) newBridgeChildren.Add(bc); } catch { }
+
+                            if (bridgeVisible && newBridgeChildren.Count > 0)
+                            {
+                                Log($"  [S0] FOUND: PopupWindowSiteBridge is now visible with {newBridgeChildren.Count} new child element(s).");
+                                foreach (var bc in newBridgeChildren)
+                                    Log($"  [S0]   Child: [{SafeGet(() => bc.Properties.ControlType.Value.ToString(), "?")}] Name=\"{SafeGet(() => bc.Properties.Name.Value ?? "")}\"");
+                                menuRoot = popupBridge; usedStrategy = "S0-PopupBridge";
+                            }
+                            else if (bridgeVisible)
+                                Log($"  [S0] Bridge is visible but no new children (existing={preClickBridgeChildIds.Count}, current={bridgeChildren.Length}).");
+                            else
+                                Log($"  [S0] NOT FOUND: PopupWindowSiteBridge still offscreen.");
+                        }
+                        catch (Exception ex) { Log($"  [S0] Error: {ex.Message}"); }
+                    }
+
+                    // ── Strategy 1 (400 ms): new top-level window ─────────────────────
+                    Log("  [S1] New top-level window — sleeping 200 ms more (400 ms total)...");
+                    System.Threading.Thread.Sleep(200);
+                    try
+                    {
+                        foreach (var child in automation.GetDesktop().FindAllChildren())
+                        {
+                            try
+                            {
+                                string rid = child.Properties.RuntimeId.Value.ToString();
+                                if (!snapWindowIds.Contains(rid))
+                                {
+                                    string t = SafeGet(() => child.AsWindow()?.Title ?? "");
+                                    string c = SafeGet(() => child.Properties.ClassName.Value ?? "");
+                                    Log($"  [S1] FOUND: new window Title='{t}' Class='{c}'");
+                                    if (menuRoot == null) { menuRoot = child; usedStrategy = "S1-NewWindow"; }
+                                }
+                            }
+                            catch { }
+                        }
+                        if (menuRoot == null || usedStrategy != "S1-NewWindow")
+                            Log($"  [S1] NOT FOUND: no new top-level window.");
+                    }
+                    catch (Exception ex) { Log($"  [S1] Error: {ex.Message}"); }
+
+                    // ── Strategy 2 (600 ms): new Menu/MenuItem descendants ─────────────
+                    Log("  [S2] New Menu/MenuItem descendants — sleeping 200 ms more (600 ms total)...");
+                    System.Threading.Thread.Sleep(200);
+                    int s2Count = 0;
+                    AutomationElement? s2Root = null;
+                    try
+                    {
+                        foreach (var desc in mainWindow.FindAllDescendants())
+                        {
+                            try
+                            {
+                                string rid = desc.Properties.RuntimeId.Value.ToString();
+                                if (snapDescIds.Contains(rid)) continue;
+                                var ct = SafeGet(() => desc.Properties.ControlType.Value, ControlType.Unknown);
+                                if (ct == ControlType.Menu || ct == ControlType.MenuItem)
+                                {
+                                    string n = SafeGet(() => desc.Properties.Name.Value ?? "");
+                                    var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                                    Log($"  [S2] FOUND [{ct}] Name=\"{n}\" BoundingRect=X={r.X} Y={r.Y} W={r.Width} H={r.Height}");
+                                    if (ct == ControlType.Menu && s2Root == null) s2Root = desc;
+                                    s2Count++;
+                                }
+                            }
+                            catch { }
+                        }
+                        if (s2Count > 0) { Log($"  [S2] FOUND: {s2Count} Menu/MenuItem element(s)."); if (menuRoot == null) { menuRoot = s2Root ?? mainWindow; usedStrategy = "S2-MenuItem"; } }
+                        else Log($"  [S2] NOT FOUND.");
+                    }
+                    catch (Exception ex) { Log($"  [S2] Error: {ex.Message}"); }
+
+                    // ── Strategy 3 (800 ms): new Invoke-capable descendants ────────────
+                    Log("  [S3] New Invoke-capable descendants — sleeping 200 ms more (800 ms total)...");
+                    System.Threading.Thread.Sleep(200);
+                    int s3Count = 0;
+                    try
+                    {
+                        foreach (var desc in mainWindow.FindAllDescendants())
+                        {
+                            try
+                            {
+                                string rid = desc.Properties.RuntimeId.Value.ToString();
+                                if (snapDescIds.Contains(rid)) continue;
+                                if (desc.Patterns.Invoke.IsSupported && !desc.Properties.IsOffscreen.Value && desc.Properties.IsEnabled.Value)
+                                {
+                                    string n  = SafeGet(() => desc.Properties.Name.Value ?? "");
+                                    string ct = SafeGet(() => desc.Properties.ControlType.Value.ToString(), "?");
+                                    var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                                    Log($"  [S3] FOUND [{ct}] Name=\"{n}\" BoundingRect=X={r.X} Y={r.Y} W={r.Width} H={r.Height}");
+                                    s3Count++;
+                                }
+                            }
+                            catch { }
+                        }
+                        if (s3Count > 0) { Log($"  [S3] FOUND: {s3Count} new Invoke-capable element(s)."); if (menuRoot == null) { menuRoot = mainWindow; usedStrategy = "S3-Invoke"; } }
+                        else Log($"  [S3] NOT FOUND.");
+                    }
+                    catch (Exception ex) { Log($"  [S3] Error: {ex.Message}"); }
+
+                    if (menuRoot == null)
+                    {
+                        Log($"  No menu detected for candidate [{ci + 1}]. Skipping to next.");
+                        continue;
+                    }
+
+                    // ── Step 4: Find all menu items and click the FIRST one ───────────
+                    Log($"  Menu found via {usedStrategy}. Step 4: Finding and clicking the first menu item...");
+
+                    var menuItems = new List<(AutomationElement el, string name, System.Drawing.Point center)>();
+                    try
+                    {
+                        foreach (var desc in menuRoot.FindAllDescendants())
+                        {
+                            try
+                            {
+                                string rid = desc.Properties.RuntimeId.Value.ToString();
+                                if (snapDescIds.Contains(rid)) continue;
+                                if (desc.Patterns.Invoke.IsSupported && !desc.Properties.IsOffscreen.Value && desc.Properties.IsEnabled.Value)
+                                {
+                                    string n = SafeGet(() => desc.Properties.Name.Value ?? "");
+                                    var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                                    int ix = r.X + r.Width / 2;
+                                    int iy = r.Y + r.Height / 2;
+                                    Log($"  Item: Name=\"{n}\" center=({ix},{iy})");
+                                    menuItems.Add((desc, n, new System.Drawing.Point(ix, iy)));
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch (Exception ex) { Log($"  Menu item search warning: {ex.Message}"); }
+
+                    if (menuItems.Count == 0)
+                    {
+                        Log($"  No Invoke-capable menu items found inside menu root. Trying mouse click at first visible child...");
+                        // Last resort: click at center of first visible child of menuRoot
+                        try
+                        {
+                            foreach (var child in menuRoot.FindAllChildren())
+                            {
+                                var r = SafeGet(() => child.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                                if (!r.IsEmpty && !SafeGet(() => child.Properties.IsOffscreen.Value, true))
+                                {
+                                    int ix = r.X + r.Width / 2;
+                                    int iy = r.Y + r.Height / 2;
+                                    Log($"  Mouse clicking first visible child at ({ix},{iy})...");
+                                    Mouse.Click(new System.Drawing.Point(ix, iy));
+                                    Log("  Click sent.");
+                                    break;
+                                }
+                            }
+                        }
+                        catch (Exception ex) { Log($"  Last-resort click failed: {ex.Message}"); }
+                    }
+                    else
+                    {
+                        var (firstEl, firstName, firstCenter) = menuItems[0];
+                        Log($"  Invoking first menu item: Name=\"{firstName}\" at ({firstCenter.X},{firstCenter.Y})...");
+                        try
+                        {
+                            firstEl.Patterns.Invoke.Pattern.Invoke();
+                            Log("  First item invoked via InvokePattern.");
+                        }
+                        catch
+                        {
+                            Log($"  InvokePattern failed — mouse clicking at ({firstCenter.X},{firstCenter.Y})...");
+                            Mouse.Click(firstCenter);
+                            Log("  Mouse click sent.");
+                        }
+                        menuSummary = $"menu via {usedStrategy}, {menuItems.Count} item(s), clicked \"{firstName}\"";
+                    }
+
+                    // ── Step 5: Wait for resulting new window and dump it ─────────────
+                    Log("  Step 5: Waiting for result window to appear (up to 5 seconds)...");
+                    System.Threading.Thread.Sleep(300);
+                    AutomationElement? resultWindow = null;
+                    try
+                    {
+                        var retryResult = Retry.WhileNull(
+                            () =>
+                            {
+                                try
+                                {
+                                    foreach (var child in automation.GetDesktop().FindAllChildren())
+                                    {
+                                        try
+                                        {
+                                            string rid = child.Properties.RuntimeId.Value.ToString();
+                                            if (!snapWindowIds.Contains(rid))
+                                            {
+                                                string t = SafeGet(() => child.AsWindow()?.Title ?? "");
+                                                string c = SafeGet(() => child.Properties.ClassName.Value ?? "");
+                                                // Exclude the context menu window itself (tiny, no title)
+                                                var r = SafeGet(() => child.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                                                bool isLargeEnough = r.Width >= 200 && r.Height >= 100;
+                                                if (isLargeEnough || !string.IsNullOrEmpty(t))
+                                                {
+                                                    Log($"  [S5] New window — Title='{t}' Class='{c}' Size={r.Width}x{r.Height}");
+                                                    return child;
+                                                }
+                                            }
+                                        }
+                                        catch { }
+                                    }
+                                }
+                                catch { }
+                                return null;
+                            },
+                            TimeSpan.FromSeconds(5),
+                            throwOnTimeout: false);
+
+                        resultWindow = retryResult?.Result;
+                    }
+                    catch (Exception ex) { Log($"  Result window wait error: {ex.Message}"); }
+
+                    if (resultWindow != null)
+                    {
+                        Log("  Step 5: Result window appeared! Dumping its element tree...");
+                        var sb = new StringBuilder();
+                        sb.AppendLine();
+                        sb.AppendLine("╔══════════════════════════════════════════════════════════════════════════════╗");
+                        sb.AppendLine("║           Result Window (after clicking first menu item)                    ║");
+                        sb.AppendLine("╚══════════════════════════════════════════════════════════════════════════════╝");
+                        sb.AppendLine($"Candidate: [{ci + 1}] {candLabel}");
+                        sb.AppendLine($"Menu     : {menuSummary}");
+                        sb.AppendLine($"Captured : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                        sb.AppendLine();
+                        int nodeCount = PrintRichUiaTree(resultWindow, sb, indent: 0, maxDepth: 8);
+                        Console.WriteLine(sb.ToString());
+                        Log($"  Result window dumped: {nodeCount} element(s).");
+                        successSummary.Add($"Candidate [{ci + 1}] + {usedStrategy} → result window with {nodeCount} elements");
+                    }
+                    else
+                    {
+                        Log("  No result window appeared within 5 seconds.");
+                        Log("  The first menu item may have acted within the same window (e.g. navigation). Run --poc again to see what changed.");
+                        successSummary.Add($"Candidate [{ci + 1}] + {usedStrategy} → no new window (check --poc after)");
+                    }
+                }
+
+                // ── Final summary ─────────────────────────────────────────────────────
+                Log("═══════════════════════════════════════════════════════════════════════");
+                Log("  --dots Auto-Explorer COMPLETE");
+                Log($"  Candidates tried: {candidates.Count}");
+                foreach (var s in successSummary)
+                    Log($"  ✓ {s}");
+                Log("═══════════════════════════════════════════════════════════════════════");
+            }
+            finally
+            {
+                Console.SetOut(originalOut);
+                fileWriter?.Dispose();
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
         }
 
         // ─── Context Menu Explorer mode ──────────────────────────────────────────────
