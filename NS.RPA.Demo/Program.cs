@@ -779,43 +779,80 @@ namespace NS.RPA.Demo
                     string usedStrategy = "none";
                     string menuSummary  = "";
 
-                    // ── Strategy 0 (200 ms): WinUI PopupWindowSiteBridge became visible ──
-                    Log("  [S0] WinUI PopupWindowSiteBridge — sleeping 200 ms...");
-                    System.Threading.Thread.Sleep(200);
-                    if (popupBridge != null)
+                    // ── Strategy 0: WinUI PopupWindowSiteBridge / Xaml_WindowedPopupClass ──
+                    // WinUI lazily adds PopupWindowSiteBridge to the tree on first flyout.
+                    // We poll up to 3×200 ms. Each poll also checks desktop-level
+                    // Xaml_WindowedPopupClass HWNDs (the actual WinUI 3 flyout window).
+                    Log("  [S0] WinUI popup detection — polling up to 600 ms (3×200 ms)...");
+                    for (int s0Poll = 1; s0Poll <= 3 && menuRoot == null; s0Poll++)
                     {
+                        System.Threading.Thread.Sleep(200);
+                        Log($"  [S0] poll {s0Poll}/3...");
                         try
                         {
-                            bool bridgeVisible = !SafeGet(() => popupBridge.Properties.IsOffscreen.Value, true);
-                            var  bridgeChildren = popupBridge.FindAllChildren();
-                            var  newBridgeChildren = new List<AutomationElement>();
-                            foreach (var bc in bridgeChildren)
-                                try { if (!preClickBridgeChildIds.Contains(bc.Properties.RuntimeId.Value.ToString())) newBridgeChildren.Add(bc); } catch { }
+                            // Sub-strategy A: check existing cached bridge (or re-find it)
+                            AutomationElement? bridge = popupBridge;
+                            if (bridge == null)
+                            {
+                                // Re-scan: WinUI may have lazily added it after the first click
+                                foreach (var d in mainWindow.FindAllDescendants())
+                                {
+                                    try
+                                    {
+                                        string cls2 = SafeGet(() => d.Properties.ClassName.Value ?? "");
+                                        if (cls2.Contains("PopupWindowSiteBridge") || cls2.Contains("PopupHost"))
+                                        { bridge = d; Log($"  [S0]   PopupWindowSiteBridge appeared in tree (lazy add)."); break; }
+                                    }
+                                    catch { }
+                                }
+                            }
+                            if (bridge != null)
+                            {
+                                bool bridgeVisible = !SafeGet(() => bridge.Properties.IsOffscreen.Value, true);
+                                var  bridgeChildren = bridge.FindAllChildren();
+                                var  newBridgeChildren = new List<AutomationElement>();
+                                foreach (var bc in bridgeChildren)
+                                    try { if (!preClickBridgeChildIds.Contains(bc.Properties.RuntimeId.Value.ToString())) newBridgeChildren.Add(bc); } catch { }
+                                if (bridgeVisible && newBridgeChildren.Count > 0)
+                                {
+                                    r_s0 = $"✓ WORKED (A-Bridge poll {s0Poll}) — {newBridgeChildren.Count} new child(ren)";
+                                    Log($"  [S0] {r_s0}");
+                                    foreach (var bc in newBridgeChildren)
+                                        Log($"  [S0]   Child: [{SafeGet(() => bc.Properties.ControlType.Value.ToString(), "?")}] Name=\"{SafeGet(() => bc.Properties.Name.Value ?? "")}\"");
+                                    menuRoot = bridge; usedStrategy = "S0-PopupBridge";
+                                    break;
+                                }
+                                else Log($"  [S0]   A-Bridge: visible={bridgeVisible} newChildren={newBridgeChildren.Count}");
+                            }
 
-                            if (bridgeVisible && newBridgeChildren.Count > 0)
+                            // Sub-strategy B: Xaml_WindowedPopupClass desktop window (WinUI 3 flyout HWND)
+                            foreach (var deskChild in automation.GetDesktop().FindAllChildren())
                             {
-                                r_s0 = $"✓ WORKED — {newBridgeChildren.Count} new child(ren) in PopupBridge";
-                                Log($"  [S0] {r_s0}");
-                                foreach (var bc in newBridgeChildren)
-                                    Log($"  [S0]   Child: [{SafeGet(() => bc.Properties.ControlType.Value.ToString(), "?")}] Name=\"{SafeGet(() => bc.Properties.Name.Value ?? "")}\"");
-                                menuRoot = popupBridge; usedStrategy = "S0-PopupBridge";
-                            }
-                            else if (bridgeVisible)
-                            {
-                                r_s0 = "✗ NOT-FOUND — bridge visible but no new children";
-                                Log($"  [S0] {r_s0} (existing={preClickBridgeChildIds.Count}, current={bridgeChildren.Length}).");
-                            }
-                            else
-                            {
-                                r_s0 = "✗ NOT-FOUND — bridge still offscreen";
-                                Log($"  [S0] {r_s0}");
+                                try
+                                {
+                                    string rid = deskChild.Properties.RuntimeId.Value.ToString();
+                                    if (snapWindowIds.Contains(rid)) continue; // existed before click
+                                    string cls2 = SafeGet(() => deskChild.Properties.ClassName.Value ?? "");
+                                    if (cls2.Contains("Xaml_WindowedPopupClass") || cls2.Contains("PopupWindowSiteBridge") || cls2.Contains("DesktopChildSiteBridge"))
+                                    {
+                                        string t2 = SafeGet(() => deskChild.Properties.Name.Value ?? "");
+                                        r_s0 = $"✓ WORKED (B-XamlPopup poll {s0Poll}) — Class='{cls2}' Name='{t2}'";
+                                        Log($"  [S0] {r_s0}");
+                                        menuRoot = deskChild; usedStrategy = "S0-XamlPopup";
+                                        break;
+                                    }
+                                }
+                                catch { }
+                                if (menuRoot != null) break;
                             }
                         }
-                        catch (Exception ex) { r_s0 = $"✗ ERROR: {ex.Message}"; Log($"  [S0] {r_s0}"); }
+                        catch (Exception ex) { r_s0 = $"✗ ERROR poll {s0Poll}: {ex.Message}"; Log($"  [S0] {r_s0}"); }
                     }
-                    else
+                    if (menuRoot == null)
                     {
-                        r_s0 = "✗ NOT-FIRED — no PopupWindowSiteBridge in tree";
+                        r_s0 = popupBridge == null
+                            ? "✗ NOT-FOUND — PopupWindowSiteBridge never appeared + no Xaml_WindowedPopupClass"
+                            : "✗ NOT-FOUND — bridge offscreen/no new children + no Xaml_WindowedPopupClass";
                         Log($"  [S0] {r_s0}");
                     }
 
@@ -827,7 +864,7 @@ namespace NS.RPA.Demo
                     }
                     else
                     {
-                        Log("  [S1] New top-level window — sleeping 200 ms more (400 ms total)...");
+                        Log("  [S1] New top-level window — sleeping 200 ms (S0 already waited 600 ms)...");
                         System.Threading.Thread.Sleep(200);
                         try
                         {
