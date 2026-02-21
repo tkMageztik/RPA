@@ -724,6 +724,15 @@ namespace NS.RPA.Demo
                     Log("───────────────────────────────────────────────────────────────────");
                     Log($"Trying candidate [{ci + 1}/{candidates.Count}]: {candLabel}");
 
+                    // Per-candidate decision record for the final table
+                    string r_click    = "?";   // how the "..." button was clicked
+                    string r_s0       = "?";   // S0 result
+                    string r_s1       = "?";   // S1 result
+                    string r_s2       = "?";   // S2 result
+                    string r_s3       = "?";   // S3 result
+                    string r_activate = "?";   // how first item was activated
+                    string r_window   = "?";   // result window
+
                     // Take fresh snapshot of top-level windows and main window descendants
                     var snapWindowIds = new HashSet<string>();
                     var snapDescIds   = new HashSet<string>();
@@ -743,15 +752,27 @@ namespace NS.RPA.Demo
                     // Click the candidate
                     try
                     {
-                        Log($"  Clicking via InvokePattern...");
+                        Log($"  [CLICK] Sending InvokePattern to '...' button...");
                         candEl.Patterns.Invoke.Pattern.Invoke();
-                        Log($"  InvokePattern.Invoke() sent.");
+                        r_click = "✓ InvokePattern";
+                        Log($"  [CLICK] ✓ InvokePattern.Invoke() succeeded.");
                     }
                     catch (Exception ex)
                     {
-                        Log($"  InvokePattern failed ({ex.Message}) — falling back to mouse click at ({candCenter.X},{candCenter.Y})...");
-                        try { Mouse.Click(candCenter); Log("  Mouse click sent."); }
-                        catch (Exception mex) { Log($"  Mouse click also failed: {mex.Message}. Skipping."); continue; }
+                        Log($"  [CLICK] ✗ InvokePattern failed ({ex.Message}) — trying mouse click at ({candCenter.X},{candCenter.Y})...");
+                        try
+                        {
+                            Mouse.Click(candCenter);
+                            r_click = "✓ Mouse.Click fallback";
+                            Log("  [CLICK] ✓ Mouse click succeeded.");
+                        }
+                        catch (Exception mex)
+                        {
+                            r_click = $"✗ both failed: {mex.Message}";
+                            Log($"  [CLICK] ✗ Mouse click also failed: {mex.Message}. Skipping candidate.");
+                            successSummary.Add($"[{ci + 1}] CLICK={r_click} — candidate skipped");
+                            continue;
+                        }
                     }
 
                     AutomationElement? menuRoot = null;
@@ -773,110 +794,169 @@ namespace NS.RPA.Demo
 
                             if (bridgeVisible && newBridgeChildren.Count > 0)
                             {
-                                Log($"  [S0] FOUND: PopupWindowSiteBridge is now visible with {newBridgeChildren.Count} new child element(s).");
+                                r_s0 = $"✓ WORKED — {newBridgeChildren.Count} new child(ren) in PopupBridge";
+                                Log($"  [S0] {r_s0}");
                                 foreach (var bc in newBridgeChildren)
                                     Log($"  [S0]   Child: [{SafeGet(() => bc.Properties.ControlType.Value.ToString(), "?")}] Name=\"{SafeGet(() => bc.Properties.Name.Value ?? "")}\"");
                                 menuRoot = popupBridge; usedStrategy = "S0-PopupBridge";
                             }
                             else if (bridgeVisible)
-                                Log($"  [S0] Bridge is visible but no new children (existing={preClickBridgeChildIds.Count}, current={bridgeChildren.Length}).");
+                            {
+                                r_s0 = "✗ NOT-FOUND — bridge visible but no new children";
+                                Log($"  [S0] {r_s0} (existing={preClickBridgeChildIds.Count}, current={bridgeChildren.Length}).");
+                            }
                             else
-                                Log($"  [S0] NOT FOUND: PopupWindowSiteBridge still offscreen.");
+                            {
+                                r_s0 = "✗ NOT-FOUND — bridge still offscreen";
+                                Log($"  [S0] {r_s0}");
+                            }
                         }
-                        catch (Exception ex) { Log($"  [S0] Error: {ex.Message}"); }
+                        catch (Exception ex) { r_s0 = $"✗ ERROR: {ex.Message}"; Log($"  [S0] {r_s0}"); }
+                    }
+                    else
+                    {
+                        r_s0 = "✗ NOT-FIRED — no PopupWindowSiteBridge in tree";
+                        Log($"  [S0] {r_s0}");
                     }
 
                     // ── Strategy 1 (400 ms): new top-level window ─────────────────────
-                    Log("  [S1] New top-level window — sleeping 200 ms more (400 ms total)...");
-                    System.Threading.Thread.Sleep(200);
-                    try
+                    if (menuRoot != null)
                     {
-                        foreach (var child in automation.GetDesktop().FindAllChildren())
-                        {
-                            try
-                            {
-                                string rid = child.Properties.RuntimeId.Value.ToString();
-                                if (!snapWindowIds.Contains(rid))
-                                {
-                                    string t = SafeGet(() => child.AsWindow()?.Title ?? "");
-                                    string c = SafeGet(() => child.Properties.ClassName.Value ?? "");
-                                    Log($"  [S1] FOUND: new window Title='{t}' Class='{c}'");
-                                    if (menuRoot == null) { menuRoot = child; usedStrategy = "S1-NewWindow"; }
-                                }
-                            }
-                            catch { }
-                        }
-                        if (menuRoot == null || usedStrategy != "S1-NewWindow")
-                            Log($"  [S1] NOT FOUND: no new top-level window.");
+                        r_s1 = "✗ SKIPPED — S0 already found menu";
+                        Log($"  [S1] {r_s1}");
                     }
-                    catch (Exception ex) { Log($"  [S1] Error: {ex.Message}"); }
+                    else
+                    {
+                        Log("  [S1] New top-level window — sleeping 200 ms more (400 ms total)...");
+                        System.Threading.Thread.Sleep(200);
+                        try
+                        {
+                            bool s1found = false;
+                            foreach (var child in automation.GetDesktop().FindAllChildren())
+                            {
+                                try
+                                {
+                                    string rid = child.Properties.RuntimeId.Value.ToString();
+                                    if (!snapWindowIds.Contains(rid))
+                                    {
+                                        string t = SafeGet(() => child.AsWindow()?.Title ?? "");
+                                        string c = SafeGet(() => child.Properties.ClassName.Value ?? "");
+                                        Log($"  [S1]   New window Title='{t}' Class='{c}'");
+                                        if (menuRoot == null) { menuRoot = child; usedStrategy = "S1-NewWindow"; }
+                                        s1found = true;
+                                    }
+                                }
+                                catch { }
+                            }
+                            r_s1 = s1found ? "✓ WORKED — new top-level window appeared" : "✗ NOT-FOUND — no new top-level window";
+                            Log($"  [S1] {r_s1}");
+                        }
+                        catch (Exception ex) { r_s1 = $"✗ ERROR: {ex.Message}"; Log($"  [S1] {r_s1}"); }
+                    }
 
                     // ── Strategy 2 (600 ms): new Menu/MenuItem descendants ─────────────
-                    Log("  [S2] New Menu/MenuItem descendants — sleeping 200 ms more (600 ms total)...");
-                    System.Threading.Thread.Sleep(200);
-                    int s2Count = 0;
-                    AutomationElement? s2Root = null;
-                    try
+                    if (menuRoot != null && usedStrategy != "S1-NewWindow")
                     {
-                        foreach (var desc in mainWindow.FindAllDescendants())
-                        {
-                            try
-                            {
-                                string rid = desc.Properties.RuntimeId.Value.ToString();
-                                if (snapDescIds.Contains(rid)) continue;
-                                var ct = SafeGet(() => desc.Properties.ControlType.Value, ControlType.Unknown);
-                                if (ct == ControlType.Menu || ct == ControlType.MenuItem)
-                                {
-                                    string n = SafeGet(() => desc.Properties.Name.Value ?? "");
-                                    var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
-                                    Log($"  [S2] FOUND [{ct}] Name=\"{n}\" BoundingRect=X={r.X} Y={r.Y} W={r.Width} H={r.Height}");
-                                    if (ct == ControlType.Menu && s2Root == null) s2Root = desc;
-                                    s2Count++;
-                                }
-                            }
-                            catch { }
-                        }
-                        if (s2Count > 0) { Log($"  [S2] FOUND: {s2Count} Menu/MenuItem element(s)."); if (menuRoot == null) { menuRoot = s2Root ?? mainWindow; usedStrategy = "S2-MenuItem"; } }
-                        else Log($"  [S2] NOT FOUND.");
+                        r_s2 = "✗ SKIPPED — earlier strategy already found menu";
+                        Log($"  [S2] {r_s2}");
                     }
-                    catch (Exception ex) { Log($"  [S2] Error: {ex.Message}"); }
+                    else
+                    {
+                        Log("  [S2] New Menu/MenuItem descendants — sleeping 200 ms more (600 ms total)...");
+                        System.Threading.Thread.Sleep(200);
+                        int s2Count = 0;
+                        AutomationElement? s2Root = null;
+                        try
+                        {
+                            foreach (var desc in mainWindow.FindAllDescendants())
+                            {
+                                try
+                                {
+                                    string rid = desc.Properties.RuntimeId.Value.ToString();
+                                    if (snapDescIds.Contains(rid)) continue;
+                                    var ct = SafeGet(() => desc.Properties.ControlType.Value, ControlType.Unknown);
+                                    if (ct == ControlType.Menu || ct == ControlType.MenuItem)
+                                    {
+                                        string n = SafeGet(() => desc.Properties.Name.Value ?? "");
+                                        var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                                        Log($"  [S2]   [{ct}] Name=\"{n}\" BoundingRect=X={r.X} Y={r.Y} W={r.Width} H={r.Height}");
+                                        if (ct == ControlType.Menu && s2Root == null) s2Root = desc;
+                                        s2Count++;
+                                    }
+                                }
+                                catch { }
+                            }
+                            if (s2Count > 0)
+                            {
+                                r_s2 = $"✓ WORKED — {s2Count} Menu/MenuItem element(s)";
+                                Log($"  [S2] {r_s2}");
+                                if (menuRoot == null) { menuRoot = s2Root ?? mainWindow; usedStrategy = "S2-MenuItem"; }
+                            }
+                            else
+                            {
+                                r_s2 = "✗ NOT-FOUND — no new Menu/MenuItem";
+                                Log($"  [S2] {r_s2}");
+                            }
+                        }
+                        catch (Exception ex) { r_s2 = $"✗ ERROR: {ex.Message}"; Log($"  [S2] {r_s2}"); }
+                    }
 
                     // ── Strategy 3 (800 ms): new Invoke-capable descendants ────────────
-                    Log("  [S3] New Invoke-capable descendants — sleeping 200 ms more (800 ms total)...");
-                    System.Threading.Thread.Sleep(200);
-                    int s3Count = 0;
-                    try
+                    if (menuRoot != null && usedStrategy != "S1-NewWindow" && usedStrategy != "S2-MenuItem")
                     {
-                        foreach (var desc in mainWindow.FindAllDescendants())
-                        {
-                            try
-                            {
-                                string rid = desc.Properties.RuntimeId.Value.ToString();
-                                if (snapDescIds.Contains(rid)) continue;
-                                if (desc.Patterns.Invoke.IsSupported && !desc.Properties.IsOffscreen.Value && desc.Properties.IsEnabled.Value)
-                                {
-                                    string n  = SafeGet(() => desc.Properties.Name.Value ?? "");
-                                    string ct = SafeGet(() => desc.Properties.ControlType.Value.ToString(), "?");
-                                    var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
-                                    Log($"  [S3] FOUND [{ct}] Name=\"{n}\" BoundingRect=X={r.X} Y={r.Y} W={r.Width} H={r.Height}");
-                                    s3Count++;
-                                }
-                            }
-                            catch { }
-                        }
-                        if (s3Count > 0) { Log($"  [S3] FOUND: {s3Count} new Invoke-capable element(s)."); if (menuRoot == null) { menuRoot = mainWindow; usedStrategy = "S3-Invoke"; } }
-                        else Log($"  [S3] NOT FOUND.");
+                        r_s3 = "✗ SKIPPED — earlier strategy already found menu";
+                        Log($"  [S3] {r_s3}");
                     }
-                    catch (Exception ex) { Log($"  [S3] Error: {ex.Message}"); }
+                    else
+                    {
+                        Log("  [S3] New Invoke-capable descendants — sleeping 200 ms more (800 ms total)...");
+                        System.Threading.Thread.Sleep(200);
+                        int s3Count = 0;
+                        try
+                        {
+                            foreach (var desc in mainWindow.FindAllDescendants())
+                            {
+                                try
+                                {
+                                    string rid = desc.Properties.RuntimeId.Value.ToString();
+                                    if (snapDescIds.Contains(rid)) continue;
+                                    if (desc.Patterns.Invoke.IsSupported && !desc.Properties.IsOffscreen.Value && desc.Properties.IsEnabled.Value)
+                                    {
+                                        string n  = SafeGet(() => desc.Properties.Name.Value ?? "");
+                                        string ct = SafeGet(() => desc.Properties.ControlType.Value.ToString(), "?");
+                                        var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                                        Log($"  [S3]   [{ct}] Name=\"{n}\" BoundingRect=X={r.X} Y={r.Y} W={r.Width} H={r.Height}");
+                                        s3Count++;
+                                    }
+                                }
+                                catch { }
+                            }
+                            if (s3Count > 0)
+                            {
+                                r_s3 = $"✓ WORKED — {s3Count} new Invoke-capable element(s)";
+                                Log($"  [S3] {r_s3}");
+                                if (menuRoot == null) { menuRoot = mainWindow; usedStrategy = "S3-Invoke"; }
+                            }
+                            else
+                            {
+                                r_s3 = "✗ NOT-FOUND — no new Invoke-capable elements";
+                                Log($"  [S3] {r_s3}");
+                            }
+                        }
+                        catch (Exception ex) { r_s3 = $"✗ ERROR: {ex.Message}"; Log($"  [S3] {r_s3}"); }
+                    }
 
                     if (menuRoot == null)
                     {
+                        r_activate = "✗ NOT-REACHED — no menu found";
+                        r_window   = "✗ NOT-REACHED";
                         Log($"  No menu detected for candidate [{ci + 1}]. Skipping to next.");
+                        successSummary.Add($"[{ci+1}] CLICK={r_click} S0={r_s0} S1={r_s1} S2={r_s2} S3={r_s3} → NO MENU");
                         continue;
                     }
 
                     // ── Step 4: Find all menu items and click the FIRST one ───────────
-                    Log($"  Menu found via {usedStrategy}. Step 4: Finding and clicking the first menu item...");
+                    Log($"  [MENU-FOUND via {usedStrategy}] Step 4: Finding and clicking the first menu item...");
 
                     var menuItems = new List<(AutomationElement el, string name, System.Drawing.Point center)>();
                     try
@@ -893,7 +973,7 @@ namespace NS.RPA.Demo
                                     var r = SafeGet(() => desc.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
                                     int ix = r.X + r.Width / 2;
                                     int iy = r.Y + r.Height / 2;
-                                    Log($"  Item: Name=\"{n}\" center=({ix},{iy})");
+                                    Log($"  [ITEM] Name=\"{n}\" center=({ix},{iy})");
                                     menuItems.Add((desc, n, new System.Drawing.Point(ix, iy)));
                                 }
                             }
@@ -904,8 +984,8 @@ namespace NS.RPA.Demo
 
                     if (menuItems.Count == 0)
                     {
-                        Log($"  No Invoke-capable menu items found inside menu root. Trying mouse click at first visible child...");
-                        // Last resort: click at center of first visible child of menuRoot
+                        Log($"  [ACTIVATE] No Invoke-capable items — trying last-resort: mouse click on first visible child...");
+                        bool lastResortOk = false;
                         try
                         {
                             foreach (var child in menuRoot.FindAllChildren())
@@ -915,19 +995,22 @@ namespace NS.RPA.Demo
                                 {
                                     int ix = r.X + r.Width / 2;
                                     int iy = r.Y + r.Height / 2;
-                                    Log($"  Mouse clicking first visible child at ({ix},{iy})...");
+                                    Log($"  [ACTIVATE] ✓ Mouse clicking first visible child at ({ix},{iy})...");
                                     Mouse.Click(new System.Drawing.Point(ix, iy));
-                                    Log("  Click sent.");
+                                    r_activate = $"✓ last-resort Mouse.Click at ({ix},{iy})";
+                                    Log("  [ACTIVATE] ✓ Click sent.");
+                                    lastResortOk = true;
                                     break;
                                 }
                             }
                         }
-                        catch (Exception ex) { Log($"  Last-resort click failed: {ex.Message}"); }
+                        catch (Exception ex) { Log($"  [ACTIVATE] ✗ Last-resort click failed: {ex.Message}"); }
+                        if (!lastResortOk) r_activate = "✗ no items found, last-resort also failed";
                     }
                     else
                     {
                         var (firstEl, firstName, firstCenter) = menuItems[0];
-                        Log($"  Clicking first menu item: Name=\"{firstName}\" at ({firstCenter.X},{firstCenter.Y})...");
+                        Log($"  [ACTIVATE] Focusing first item \"{firstName}\" via InvokePattern + Enter key-down+up...");
                         // WinUI MenuFlyoutItem: Mouse.Click moves the cursor and focuses/hovers
                         // the item (same as arrow key), but Enter is what actually activates it.
                         // Strategy: focus via InvokePattern, then send full Enter key-down+key-up.
@@ -936,12 +1019,13 @@ namespace NS.RPA.Demo
                         System.Threading.Thread.Sleep(80); // brief pause so WinUI registers focus
                         Keyboard.Press(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
                         Keyboard.Release(FlaUI.Core.WindowsAPI.VirtualKeyShort.RETURN);
-                        Log("  Enter key down+up sent — item activated.");
+                        r_activate = $"✓ InvokePattern(focus) + Enter key-down+up on \"{firstName}\"";
+                        Log($"  [ACTIVATE] ✓ Enter key down+up sent — item activated.");
                         menuSummary = $"menu via {usedStrategy}, {menuItems.Count} item(s), activated \"{firstName}\"";
                     }
 
                     // ── Step 5: Wait for resulting new window and dump it ─────────────
-                    Log("  Step 5: Waiting for result window to appear (up to 5 seconds)...");
+                    Log("  [RESULT] Waiting for result window (up to 5 seconds)...");
                     System.Threading.Thread.Sleep(300);
                     AutomationElement? resultWindow = null;
                     try
@@ -965,7 +1049,7 @@ namespace NS.RPA.Demo
                                                 bool isLargeEnough = r.Width >= 200 && r.Height >= 100;
                                                 if (isLargeEnough || !string.IsNullOrEmpty(t))
                                                 {
-                                                    Log($"  [S5] New window — Title='{t}' Class='{c}' Size={r.Width}x{r.Height}");
+                                                    Log($"  [RESULT] New window — Title='{t}' Class='{c}' Size={r.Width}x{r.Height}");
                                                     return child;
                                                 }
                                             }
@@ -981,11 +1065,12 @@ namespace NS.RPA.Demo
 
                         resultWindow = retryResult?.Result;
                     }
-                    catch (Exception ex) { Log($"  Result window wait error: {ex.Message}"); }
+                    catch (Exception ex) { Log($"  [RESULT] Result window wait error: {ex.Message}"); }
 
                     if (resultWindow != null)
                     {
-                        Log("  Step 5: Result window appeared! Dumping its element tree...");
+                        r_window = "✓ result window appeared";
+                        Log($"  [RESULT] {r_window} — dumping element tree...");
                         var sb = new StringBuilder();
                         sb.AppendLine();
                         sb.AppendLine("╔══════════════════════════════════════════════════════════════════════════════╗");
@@ -997,23 +1082,29 @@ namespace NS.RPA.Demo
                         sb.AppendLine();
                         int nodeCount = PrintRichUiaTree(resultWindow, sb, indent: 0, maxDepth: 8);
                         Console.WriteLine(sb.ToString());
-                        Log($"  Result window dumped: {nodeCount} element(s).");
-                        successSummary.Add($"Candidate [{ci + 1}] + {usedStrategy} → result window with {nodeCount} elements");
+                        Log($"  [RESULT] ✓ Result window dumped: {nodeCount} element(s).");
+                        successSummary.Add($"[{ci+1}] CLICK={r_click} | S0={r_s0} | S1={r_s1} | S2={r_s2} | S3={r_s3} | ACTIVATE={r_activate} | WINDOW={r_window} ({nodeCount} elements)");
                     }
                     else
                     {
-                        Log("  No result window appeared within 5 seconds.");
-                        Log("  The first menu item may have acted within the same window (e.g. navigation). Run --poc again to see what changed.");
-                        successSummary.Add($"Candidate [{ci + 1}] + {usedStrategy} → no new window (check --poc after)");
+                        r_window = "✗ no new window within 5s (action may have changed same window)";
+                        Log($"  [RESULT] {r_window}");
+                        Log("  [RESULT] Tip: run --poc again to see what changed inside the main window.");
+                        successSummary.Add($"[{ci+1}] CLICK={r_click} | S0={r_s0} | S1={r_s1} | S2={r_s2} | S3={r_s3} | ACTIVATE={r_activate} | WINDOW={r_window}");
                     }
                 }
 
-                // ── Final summary ─────────────────────────────────────────────────────
+                // ── Final summary / decision table ───────────────────────────────────
                 Log("═══════════════════════════════════════════════════════════════════════");
-                Log("  --dots Auto-Explorer COMPLETE");
+                Log("  --dots Auto-Explorer COMPLETE — Decision Table");
+                Log("  (✓ WORKED = keep this code | ✗ SKIPPED = dead code for this app)");
+                Log("───────────────────────────────────────────────────────────────────────");
                 Log($"  Candidates tried: {candidates.Count}");
                 foreach (var s in successSummary)
-                    Log($"  ✓ {s}");
+                {
+                    // Print each field on its own line for readability
+                    Log($"  Candidate {s}");
+                }
                 Log("═══════════════════════════════════════════════════════════════════════");
             }
             finally
