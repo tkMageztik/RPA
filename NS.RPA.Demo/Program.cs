@@ -58,17 +58,32 @@ namespace NS.RPA.Demo
             {
                 string appPath = "calc.exe";
                 bool pocMode = false;
+                bool contextMode = false;
+                bool clickFirst = false;
                 string? outputFile = null;
                 string? windowTitle = null;
+                string? clickByName = null;
+                string? clickById = null;
+                string? clickAtCoords = null;
 
                 for (int i = 0; i < args.Length; i++)
                 {
                     if (args[i].Equals("--poc", StringComparison.OrdinalIgnoreCase))
                         pocMode = true;
+                    else if (args[i].Equals("--context", StringComparison.OrdinalIgnoreCase))
+                        contextMode = true;
+                    else if (args[i].Equals("--click-first", StringComparison.OrdinalIgnoreCase))
+                        clickFirst = true;
                     else if (args[i].Equals("--out", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                         outputFile = args[++i];
                     else if (args[i].Equals("--title", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
                         windowTitle = args[++i];
+                    else if (args[i].Equals("--click-name", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                        clickByName = args[++i];
+                    else if (args[i].Equals("--click-id", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                        clickById = args[++i];
+                    else if (args[i].Equals("--click-at", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+                        clickAtCoords = args[++i];
                     else
                         appPath = args[i];
                 }
@@ -76,16 +91,22 @@ namespace NS.RPA.Demo
                 if (string.IsNullOrWhiteSpace(appPath))
                     throw new ArgumentException("Application path must not be empty.");
 
-                Log($"Mode        : {(pocMode ? "POC Inspector" : "Demo (keyboard)")}");
+                string mode = contextMode ? "Context Menu Explorer" : pocMode ? "POC Inspector" : "Demo (keyboard)";
+                Log($"Mode        : {mode}");
                 Log($"Application : {appPath}");
-                if (windowTitle != null) Log($"Window title: '{windowTitle}' (override)");
-                if (outputFile != null)  Log($"Output file : {outputFile}");
+                if (windowTitle  != null) Log($"Window title: '{windowTitle}' (override)");
+                if (outputFile   != null) Log($"Output file : {outputFile}");
+                if (clickByName  != null) Log($"Click name  : '{clickByName}'");
+                if (clickById    != null) Log($"Click id    : '{clickById}'");
+                if (clickAtCoords != null) Log($"Click at    : {clickAtCoords}");
 
                 using var automation = new UIA3Automation();
 
                 var (_, mainWindow) = GetOrLaunchApp(appPath, automation, windowTitle);
 
-                if (pocMode)
+                if (contextMode)
+                    RunContextMenuExplorer(mainWindow, automation, clickByName, clickById, clickAtCoords, clickFirst, outputFile);
+                else if (pocMode)
                     RunPocInspector(mainWindow, outputFile);
                 else
                     RunCalcDemo(mainWindow);
@@ -547,6 +568,317 @@ namespace NS.RPA.Demo
                 LogError($"Error reading UIA element at depth {indent}", ex);
                 return 0;
             }
+        }
+
+        // ─── Context Menu Explorer mode ──────────────────────────────────────────────
+
+        /// <summary>
+        /// Clicks a target element (identified by name, AutomationId, or screen coordinates),
+        /// then waits for and captures whatever popup or context menu appears as a result.
+        /// The popup tree is dumped with full interaction details — ready to paste to an AI
+        /// for automation help.  If <paramref name="clickFirst"/> is true, the first
+        /// Invoke-capable item found in the popup is also invoked automatically.
+        /// </summary>
+        /// <param name="mainWindow">The main window of the target application.</param>
+        /// <param name="automation">The UIA3 automation instance.</param>
+        /// <param name="clickByName">Find and click the element whose Name contains this text (case-insensitive).</param>
+        /// <param name="clickById">Find and click the element whose AutomationId equals this value.</param>
+        /// <param name="clickAtCoords">Click at screen coordinates supplied as "x,y" (e.g. "1372,88").</param>
+        /// <param name="clickFirst">If true, invoke the first Invoke-capable item found in the popup.</param>
+        /// <param name="outputFile">Optional path to mirror output to a file (same TeeWriter mechanism as --poc).</param>
+        static void RunContextMenuExplorer(
+            Window mainWindow,
+            UIA3Automation automation,
+            string? clickByName,
+            string? clickById,
+            string? clickAtCoords,
+            bool clickFirst,
+            string? outputFile)
+        {
+            // ── Tee output to file if requested ──────────────────────────────────────
+            TextWriter originalOut = Console.Out;
+            StreamWriter? fileWriter = null;
+            if (outputFile != null)
+            {
+                try
+                {
+                    fileWriter = new StreamWriter(outputFile, append: false, Encoding.UTF8) { AutoFlush = true };
+                    Console.SetOut(new TeeWriter(originalOut, fileWriter));
+                    Log($"Tee output active — mirroring console to: {outputFile}");
+                }
+                catch (Exception ex)
+                {
+                    LogError($"Could not open output file '{outputFile}' — console only.", ex);
+                }
+            }
+
+            try
+            {
+                Log("--- Starting Context Menu Explorer ---");
+                Log("Step 1: Snapshot existing top-level windows before clicking...");
+
+                // Collect the runtime IDs of all current top-level windows so we can
+                // detect any NEW window that appears after the click (Strategy A).
+                var existingWindowIds = new HashSet<string>();
+                try
+                {
+                    foreach (var child in automation.GetDesktop().FindAllChildren())
+                    {
+                        try
+                        {
+                            existingWindowIds.Add(child.Properties.RuntimeId.Value.ToString());
+                        }
+                        catch { /* skip inaccessible */ }
+                    }
+                }
+                catch (Exception ex) { Log($"Snapshot warning: {ex.Message}"); }
+
+                Log($"Snapshot complete — {existingWindowIds.Count} existing top-level window(s).");
+
+                // Also snapshot the existing Invoke-capable descendants within the main window
+                // so Strategy B can find NEW ones that appear after the click.
+                var existingDescendantIds = new HashSet<string>();
+                try
+                {
+                    foreach (var desc in mainWindow.FindAllDescendants())
+                    {
+                        try
+                        {
+                            if (desc.Patterns.Invoke.IsSupported)
+                                existingDescendantIds.Add(desc.Properties.RuntimeId.Value.ToString());
+                        }
+                        catch { /* skip */ }
+                    }
+                }
+                catch (Exception ex) { Log($"Descendant snapshot warning: {ex.Message}"); }
+
+                Log($"Descendant snapshot complete — {existingDescendantIds.Count} existing Invoke-capable element(s).");
+
+                // ── Step 2: Find and click the target element ─────────────────────────
+                Log("Step 2: Finding and clicking the target element...");
+
+                if (clickAtCoords != null)
+                {
+                    // Coordinate-based click — useful for unnamed/opaque elements like "..."
+                    var parts = clickAtCoords.Split(',');
+                    if (parts.Length != 2
+                        || !int.TryParse(parts[0].Trim(), out int cx)
+                        || !int.TryParse(parts[1].Trim(), out int cy))
+                        throw new ArgumentException($"--click-at must be in format 'x,y', got: '{clickAtCoords}'");
+
+                    Log($"Clicking at screen coordinates ({cx},{cy})...");
+                    Mouse.Click(new System.Drawing.Point(cx, cy));
+                    Log("Click sent.");
+                }
+                else
+                {
+                    // UIA element-based click
+                    AutomationElement? target = null;
+
+                    if (clickById != null)
+                    {
+                        Log($"Searching for element with AutomationId='{clickById}'...");
+                        target = mainWindow.FindFirstDescendant(
+                            cf => cf.ByAutomationId(clickById));
+                    }
+                    else if (clickByName != null)
+                    {
+                        Log($"Searching for element with Name containing '{clickByName}'...");
+                        // FindAllDescendants and pick first case-insensitive match
+                        foreach (var desc in mainWindow.FindAllDescendants())
+                        {
+                            try
+                            {
+                                string n = desc.Properties.Name.Value ?? "";
+                                if (n.IndexOf(clickByName, StringComparison.OrdinalIgnoreCase) >= 0)
+                                {
+                                    target = desc;
+                                    break;
+                                }
+                            }
+                            catch { /* skip */ }
+                        }
+                    }
+                    else
+                    {
+                        throw new ArgumentException(
+                            "Context mode requires --click-name, --click-id, or --click-at to identify the target element.");
+                    }
+
+                    if (target == null)
+                        throw new InvalidOperationException(
+                            $"No element found matching the given criteria. Run --poc first to inspect the tree.");
+
+                    string targetName = SafeGet(() => target.Properties.Name.Value ?? "");
+                    string targetId   = SafeGet(() => target.Properties.AutomationId.Value ?? "");
+                    var    targetRect = SafeGet(() => target.Properties.BoundingRectangle.Value,
+                                                new System.Drawing.Rectangle());
+                    Log($"Target found — Name='{targetName}' AutomationId='{targetId}' " +
+                        $"BoundingRect=X={targetRect.X} Y={targetRect.Y} W={targetRect.Width} H={targetRect.Height}");
+
+                    Log("Clicking target element via Invoke pattern or mouse...");
+                    if (target.Patterns.Invoke.IsSupported)
+                    {
+                        target.Patterns.Invoke.Pattern.Invoke();
+                        Log("Invoked via InvokePattern.");
+                    }
+                    else
+                    {
+                        // Fall back to mouse click at center of bounding rect
+                        int mx = targetRect.X + targetRect.Width  / 2;
+                        int my = targetRect.Y + targetRect.Height / 2;
+                        Mouse.Click(new System.Drawing.Point(mx, my));
+                        Log($"Clicked at center ({mx},{my}) via mouse.");
+                    }
+                }
+
+                // ── Step 3: Wait for popup ─────────────────────────────────────────────
+                Log("Step 3: Waiting for popup / context menu to appear (up to 5 seconds)...");
+
+                AutomationElement? popup = null;
+
+                // Strategy A: new top-level window appeared
+                var popupResult = Retry.WhileNull(
+                    () =>
+                    {
+                        try
+                        {
+                            foreach (var child in automation.GetDesktop().FindAllChildren())
+                            {
+                                try
+                                {
+                                    string runtimeId = child.Properties.RuntimeId.Value.ToString();
+                                    if (!existingWindowIds.Contains(runtimeId))
+                                    {
+                                        // New window — verify it has content
+                                        string title = SafeGet(() => child.AsWindow()?.Title ?? "");
+                                        string cls   = SafeGet(() => child.Properties.ClassName.Value ?? "");
+                                        Log($"[Popup detected] New top-level window — Title='{title}', Class='{cls}'");
+                                        return child;
+                                    }
+                                }
+                                catch { /* element gone */ }
+                            }
+                        }
+                        catch { /* desktop scan failed */ }
+                        return null;
+                    },
+                    TimeSpan.FromSeconds(5),
+                    throwOnTimeout: false);   // don't throw — fall back to strategy B
+
+                if (popupResult?.Result != null)
+                {
+                    popup = popupResult.Result;
+                    Log("[Strategy A] Popup is a new top-level window.");
+                }
+                else
+                {
+                    // Strategy B: new Invoke-capable children appeared inside main window
+                    Log("[Strategy A] No new top-level window detected.");
+                    Log("[Strategy B] Scanning main window for newly visible Invoke-capable elements...");
+
+                    var newItems = new List<AutomationElement>();
+                    try
+                    {
+                        foreach (var desc in mainWindow.FindAllDescendants())
+                        {
+                            try
+                            {
+                                if (desc.Patterns.Invoke.IsSupported
+                                    && !desc.Properties.IsOffscreen.Value)
+                                {
+                                    // Compare against the pre-click descendant snapshot
+                                    // (NOT existingWindowIds which only has top-level windows)
+                                    string rid = desc.Properties.RuntimeId.Value.ToString();
+                                    if (!existingDescendantIds.Contains(rid))
+                                        newItems.Add(desc);
+                                }
+                            }
+                            catch { /* skip */ }
+                        }
+                    }
+                    catch (Exception ex) { Log($"[Strategy B] Scan warning: {ex.Message}"); }
+
+                    if (newItems.Count > 0)
+                    {
+                        Log($"[Strategy B] Found {newItems.Count} new Invoke-capable element(s) — treating as popup items.");
+                        // Use the main window as the dump root (context menu renders inside it)
+                        popup = mainWindow;
+                    }
+                    else
+                    {
+                        Log("[Strategy B] No new elements detected. The popup may be coordinate-based or use a custom renderer.");
+                        Log("Tip: try --click-at with the center coords of the '...' button from your --poc report.");
+                    }
+                }
+
+                // ── Step 4: Dump the popup tree ────────────────────────────────────────
+                if (popup != null)
+                {
+                    Log("Step 4: Dumping popup / context menu tree...");
+                    var sb = new StringBuilder();
+                    sb.AppendLine();
+                    sb.AppendLine("╔══════════════════════════════════════════════════════════════════════════════╗");
+                    sb.AppendLine("║               Context Menu / Popup — Element Tree                          ║");
+                    sb.AppendLine("╚══════════════════════════════════════════════════════════════════════════════╝");
+                    sb.AppendLine($"Captured : {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                    sb.AppendLine();
+
+                    int nodeCount = PrintRichUiaTree(popup, sb, indent: 0, maxDepth: 6);
+                    Console.WriteLine(sb.ToString());
+                    Log($"Popup tree: {nodeCount} element(s).");
+
+                    // ── Step 5: Click first item if requested ──────────────────────────
+                    if (clickFirst)
+                    {
+                        Log("Step 5: --click-first is set — invoking first Invoke-capable item in popup...");
+                        AutomationElement? firstItem = null;
+                        try
+                        {
+                            foreach (var desc in popup.FindAllDescendants())
+                            {
+                                try
+                                {
+                                    if (desc.Patterns.Invoke.IsSupported
+                                        && !desc.Properties.IsOffscreen.Value
+                                        && desc.Properties.IsEnabled.Value)
+                                    {
+                                        firstItem = desc;
+                                        break;
+                                    }
+                                }
+                                catch { /* skip */ }
+                            }
+                        }
+                        catch (Exception ex) { Log($"Search for first item warning: {ex.Message}"); }
+
+                        if (firstItem != null)
+                        {
+                            string itemName = SafeGet(() => firstItem.Properties.Name.Value ?? "");
+                            Log($"Invoking first item: Name='{itemName}'...");
+                            firstItem.Patterns.Invoke.Pattern.Invoke();
+                            Log("First item invoked.");
+                        }
+                        else
+                        {
+                            Log("No Invoke-capable item found in popup to click.");
+                        }
+                    }
+                }
+
+                Log("--- Context Menu Explorer completed ---");
+                if (outputFile != null && fileWriter != null)
+                    Log($"Report saved to: {outputFile}");
+            }
+            finally
+            {
+                Console.SetOut(originalOut);
+                fileWriter?.Dispose();
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
         }
 
         // ─── Helpers ──────────────────────────────────────────────────────────────────
