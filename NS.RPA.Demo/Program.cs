@@ -926,17 +926,21 @@ namespace NS.RPA.Demo
                     else
                     {
                         var (firstEl, firstName, firstCenter) = menuItems[0];
-                        Log($"  Invoking first menu item: Name=\"{firstName}\" at ({firstCenter.X},{firstCenter.Y})...");
+                        Log($"  Clicking first menu item: Name=\"{firstName}\" at ({firstCenter.X},{firstCenter.Y})...");
+                        // WinUI MenuFlyoutItem: InvokePattern.Invoke() only selects/focuses
+                        // the item without actually activating it. A physical mouse click is
+                        // required. Use Mouse.Click first; fall back to InvokePattern if it
+                        // throws (e.g. element moved off-screen between find and click).
                         try
                         {
-                            firstEl.Patterns.Invoke.Pattern.Invoke();
-                            Log("  First item invoked via InvokePattern.");
+                            Mouse.Click(firstCenter);
+                            Log("  Mouse click sent.");
                         }
                         catch
                         {
-                            Log($"  InvokePattern failed — mouse clicking at ({firstCenter.X},{firstCenter.Y})...");
-                            Mouse.Click(firstCenter);
-                            Log("  Mouse click sent.");
+                            Log($"  Mouse click failed — trying InvokePattern at ({firstCenter.X},{firstCenter.Y})...");
+                            firstEl.Patterns.Invoke.Pattern.Invoke();
+                            Log("  InvokePattern.Invoke() sent.");
                         }
                         menuSummary = $"menu via {usedStrategy}, {menuItems.Count} item(s), clicked \"{firstName}\"";
                     }
@@ -1396,9 +1400,22 @@ namespace NS.RPA.Demo
                         if (firstItem != null)
                         {
                             string itemName = SafeGet(() => firstItem.Properties.Name.Value ?? "");
-                            Log($"Invoking first item: Name='{itemName}'...");
-                            firstItem.Patterns.Invoke.Pattern.Invoke();
-                            Log("First item invoked.");
+                            var itemRect = SafeGet(() => firstItem.Properties.BoundingRectangle.Value, new System.Drawing.Rectangle());
+                            int itemCx = itemRect.X + itemRect.Width  / 2;
+                            int itemCy = itemRect.Y + itemRect.Height / 2;
+                            Log($"Clicking first item: Name='{itemName}' at ({itemCx},{itemCy})...");
+                            // Physical mouse click — WinUI MenuFlyoutItem requires this
+                            try
+                            {
+                                Mouse.Click(new System.Drawing.Point(itemCx, itemCy));
+                                Log("First item clicked via mouse.");
+                            }
+                            catch
+                            {
+                                Log($"Mouse click failed — trying InvokePattern...");
+                                firstItem.Patterns.Invoke.Pattern.Invoke();
+                                Log("First item invoked via InvokePattern.");
+                            }
                         }
                         else
                         {
